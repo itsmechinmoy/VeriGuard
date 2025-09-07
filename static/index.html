@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VeriGuard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" href="https://via.placeholder.com/32" type="image/png">
+    <meta name="theme-color" content="#1E3A8A">
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="container mx-auto p-4 max-w-4xl">
+        <h1 class="text-3xl font-bold text-center mb-6 text-blue-900">VeriGuard</h1>
+        <p class="text-center mb-4">Upload an image, enter an image URL, or type health advice to check for misinformation.</p>
+
+        <!-- Input Method Selection -->
+        <div class="mb-6">
+            <label class="block text-lg font-medium mb-2">Choose Input Method:</label>
+            <div class="flex space-x-4">
+                <label><input type="radio" name="input-method" value="upload" checked class="mr-2">Upload Image</label>
+                <label><input type="radio" name="input-method" value="url" class="mr-2">Image URL</label>
+                <label><input type="radio" name="input-method" value="text" class="mr-2">Type Text</label>
+            </div>
+        </div>
+
+        <!-- Input Forms -->
+        <div id="upload-input" class="mb-6">
+            <label class="block text-lg font-medium mb-2">Upload Image (jpg, png, jpeg):</label>
+            <input type="file" id="image-file" accept="image/jpeg,image/png" class="w-full p-2 border rounded">
+        </div>
+        <div id="url-input" class="mb-6 hidden">
+            <label class="block text-lg font-medium mb-2">Enter Image URL:</label>
+            <input type="url" id="image-url" placeholder="https://example.com/image.jpg" class="w-full p-2 border rounded">
+        </div>
+        <div id="text-input" class="mb-6 hidden">
+            <label class="block text-lg font-medium mb-2">Enter Health Advice:</label>
+            <textarea id="text-area" rows="5" placeholder="Type your health advice here..." class="w-full p-2 border rounded"></textarea>
+        </div>
+
+        <!-- API Keys -->
+        <div class="mb-6">
+            <label class="block text-lg font-medium mb-2">API Keys (optional):</label>
+            <input type="password" id="google-api-key" placeholder="Google Fact Check API Key" class="w-full p-2 border rounded mb-2">
+            <input type="password" id="xai-api-key" placeholder="xAI Grok API Key" class="w-full p-2 border rounded">
+        </div>
+
+        <!-- Submit Button -->
+        <button id="submit-btn" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 w-full">Analyze</button>
+
+        <!-- Results -->
+        <div id="results" class="mt-6 hidden">
+            <h2 class="text-2xl font-semibold mb-4">Results</h2>
+            <div id="extracted-text" class="mb-4">
+                <h3 class="text-xl font-medium">Extracted Text:</h3>
+                <p id="text-content" class="bg-white p-4 rounded shadow"></p>
+            </div>
+            <div id="pubmed-results" class="mb-4">
+                <h3 class="text-xl font-medium">PubMed Articles:</h3>
+                <ul id="pubmed-list" class="bg-white p-4 rounded shadow list-disc pl-5"></ul>
+            </div>
+            <div id="fact-check-results" class="mb-4">
+                <h3 class="text-xl font-medium">Fact Check Results:</h3>
+                <ul id="fact-check-list" class="bg-white p-4 rounded shadow list-disc pl-5"></ul>
+            </div>
+            <div id="grok-analysis" class="mb-4">
+                <h3 class="text-xl font-medium">Grok AI Analysis:</h3>
+                <p id="grok-content" class="bg-white p-4 rounded shadow"></p>
+            </div>
+        </div>
+
+        <!-- Error Message -->
+        <div id="error" class="mt-4 text-red-600 hidden"></div>
+
+        <!-- Footer -->
+        <footer class="mt-8 text-center text-gray-600">
+            <p>Note: This is a prototype. Always consult healthcare professionals for health advice.</p>
+            <p>Get API keys: <a href="https://x.ai/api" class="text-blue-600">xAI</a> | <a href="https://console.developers.google.com/" class="text-blue-600">Google</a></p>
+        </footer>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
