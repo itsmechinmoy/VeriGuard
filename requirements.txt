@@ -4,3 +4,5 @@ pytesseract==0.3.10
 Pillow==10.4.0
 requests==2.32.3
 python-dotenv==1.0.1
+google-generativeai==0.8.3  # For Gemini free tier
+openai==1.51.0  # For DeepSeek via OpenRouter

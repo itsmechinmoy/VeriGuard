@@ -1,0 +1,15 @@
+services:
+   - name: veriguard-backend
+     env: docker
+     dockerfilePath: ./Dockerfile
+     buildCommand: "docker build -t veriguard-backend ."
+     startCommand: "docker run -p $PORT:8000 veriguard-backend"
+     envVars:
+       - key: GEMINI_API_KEY
+         value: your_gemini_api_key
+       - key: DEEPSEEK_API_KEY
+         value: your_deepseek_api_key
+       - key: GOOGLE_API_KEY
+         value: your_google_api_key
+     regions:
+       - oregon

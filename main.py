@@ -1,84 +1,163 @@
 import os
 from fastapi import FastAPI, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from src.ocr_processor import extract_text_from_image
-from src.fact_check_api import get_fact_checks
-from src.grok_analysis import analyze_with_grok
-import openai
 import requests
 from PIL import Image
 import io
+from dotenv import load_dotenv
+import google.generativeai as genai  # For Gemini
+from openai import OpenAI  # For DeepSeek via OpenRouter
+
+load_dotenv()
 
 app = FastAPI()
 
-# CORS configuration
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust for production (e.g., "https://veriguard-hackathon.netlify.app")
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load API keys from environment variables (GitHub Secrets)
+# API Keys
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-XAI_API_KEY = os.getenv("XAI_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Initialize OpenAI client
-openai.api_key = OPENAI_API_KEY
+# Initialize clients
+genai.configure(api_key=GEMINI_API_KEY)
+deepseek_client = OpenAI(
+    api_key=DEEPSEEK_API_KEY,
+    base_url="https://openrouter.ai/api/v1"
+)
+
+def extract_text_from_image(image_file):
+    """OCR using Tesseract (from src/ocr_processor.py)"""
+    from src.ocr_processor import extract_text_from_image as ocr_extract
+    return ocr_extract(image_file)
+
+def search_pubmed(query):
+    """Free PubMed search via NCBI EUtils."""
+    try:
+        esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+        params = {"db": "pubmed", "term": query, "retmax": 3, "retmode": "json"}
+        response = requests.get(esearch_url, params=params, timeout=10)
+        data = response.json()
+        ids = data.get("esearchresult", {}).get("idlist", [])
+        if not ids:
+            return []
+        esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+        params = {"db": "pubmed", "id": ",".join(ids), "retmode": "json"}
+        response = requests.get(esummary_url, params=params, timeout=10)
+        data = response.json()
+        results = []
+        for uid in data.get("result", {}).get("uids", []):
+            article = data["result"][uid]
+            results.append({
+                "title": article.get("title", ""),
+                "authors": ", ".join([a["name"] for a in article.get("authors", [])]),
+                "pubdate": article.get("pubdate", ""),
+                "url": f"https://pubmed.ncbi.nlm.nih.gov/{uid}/"
+            })
+        return results
+    except:
+        return []
+
+def search_fact_check(query):
+    """Free Google Fact Check Tools API."""
+    if not GOOGLE_API_KEY:
+        return []
+    try:
+        url = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
+        params = {"query": query, "key": GOOGLE_API_KEY, "pageSize": 3}
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        claims = data.get("claims", [])
+        results = []
+        for claim in claims:
+            for review in claim.get("claimReview", []):
+                results.append({
+                    "claim": claim.get("text", ""),
+                    "rating": review.get("textualRating", ""),
+                    "publisher": review.get("publisher", {}).get("name", ""),
+                    "url": review.get("url", "")
+                })
+        return results
+    except:
+        return []
+
+def analyze_with_gemini(text):
+    """Gemini for medical analysis (free tier)."""
+    if not GEMINI_API_KEY:
+        return "Gemini API key not set."
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        prompt = f"Analyze this medical/health advice for accuracy and reliability: {text}. Provide key facts, potential risks, and sources if known. Keep concise."
+        response = model.generate_content(prompt)
+        return response.text
+    except:
+        return "Gemini analysis unavailable."
+
+def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
+    """DeepSeek to rewrite into concise response (free via OpenRouter)."""
+    if not DEEPSEEK_API_KEY:
+        return "DeepSeek API key not set."
+    try:
+        prompt = f"""
+        Summarize the following medical advice into a short, concise response. Use bullet points, include links to sources, and flag any misinformation.
+        Original text: {text}
+        PubMed sources: {pubmed}
+        Fact checks: {fact_checks}
+        Gemini analysis: {gemini_analysis}
+        Keep under 200 words, focus on key points, avoid hallucination.
+        """
+        response = deepseek_client.chat.completions.create(
+            model="deepseek/deepseek-chat",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=300,
+            temperature=0.1  # Low temperature to reduce hallucination
+        )
+        return response.choices[0].message.content.strip()
+    except:
+        return "Summarization unavailable."
 
 @app.post("/process")
 async def process_input(file: UploadFile = None, image_url: str = Form(None), text: str = Form(None)):
-    extracted_text = ""
     try:
+        # OCR or text extraction
         if file:
             extracted_text = extract_text_from_image(file.file)
         elif image_url:
             response = requests.get(image_url, stream=True, timeout=10)
             if response.status_code != 200:
-                raise HTTPException(status_code=400, detail=f"Failed to load image from URL (Status code: {response.status_code})")
+                raise HTTPException(400, detail="Failed to load image from URL")
             image = Image.open(io.BytesIO(response.content))
             extracted_text = extract_text_from_image(image)
-        elif text:
-            extracted_text = text.strip()
         else:
-            raise HTTPException(status_code=400, detail="No input provided")
-
+            extracted_text = text.strip() if text else ""
         if not extracted_text:
-            raise HTTPException(status_code=400, detail="No text extracted or provided")
+            raise HTTPException(400, detail="No text extracted or provided")
 
-        # Fact-checking with Google
-        fact_checks = get_fact_checks(extracted_text, GOOGLE_API_KEY) if GOOGLE_API_KEY else []
+        # Fact-checking
+        pubmed_results = search_pubmed(extracted_text.replace(" ", "+"))
+        fact_checks = search_fact_check(extracted_text)
 
-        # Grok analysis
-        grok_analysis = analyze_with_grok(extracted_text, XAI_API_KEY) if XAI_API_KEY else "Grok API key not set"
+        # AI analysis
+        gemini_analysis = analyze_with_gemini(extracted_text)
 
-        # ChatGPT analysis
-        chatgpt_analysis = "ChatGPT API key not set"
-        if OPENAI_API_KEY:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",  # or "gpt-4" if available
-                messages=[{"role": "user", "content": f"Analyze this health advice for accuracy: {extracted_text}"}],
-                max_tokens=150
-            )
-            chatgpt_analysis = response.choices[0].message['content'].strip()
-
-        # PubMed search (placeholder)
-        pubmed_results = []  # Implement PubMed API integration here
+        # Summarize
+        summary = summarize_with_deepseek(extracted_text, pubmed_results, fact_checks, gemini_analysis)
 
         return {
-            "extracted_text": extracted_text,
-            "pubmed_results": pubmed_results,
-            "fact_checks": fact_checks,
-            "grok_analysis": grok_analysis,
-            "chatgpt_analysis": chatgpt_analysis
+            "summary": summary,
+            "sources": {
+                "pubmed": pubmed_results,
+                "fact_checks": fact_checks
+            }
         }
-    except HTTPException as e:
-        raise e
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing input: {str(e)}")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+        raise HTTPException(500, detail=str(e))

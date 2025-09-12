@@ -63,70 +63,82 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Handle form submission
-    sendBtn.addEventListener('click', async () => {
-        sendBtn.disabled = true;
+    sendBtn.addEventListener("click", async () => {
+      sendBtn.disabled = true;
 
-        const formData = new FormData();
-        const inputText = chatInput.value.trim();
-        const file = fileUpload.files[0];
+      const formData = new FormData();
+      const inputText = chatInput.value.trim();
+      const file = fileUpload.files[0];
 
-        if (file) {
-            formData.append('file', file);
-        } else if (inputText && (inputText.startsWith('http://') || inputText.startsWith('https://'))) {
-            formData.append('image_url', inputText);
-        } else if (inputText) {
-            formData.append('text', inputText);
-        } else {
-            sendBtn.disabled = false;
-            return;
+      if (file) {
+        formData.append("file", file);
+      } else if (
+        inputText &&
+        (inputText.startsWith("http://") || inputText.startsWith("https://"))
+      ) {
+        formData.append("image_url", inputText);
+      } else if (inputText) {
+        formData.append("text", inputText);
+      } else {
+        sendBtn.disabled = false;
+        return;
+      }
+
+      // Display user input
+      const userMessage = document.createElement("div");
+      userMessage.textContent = inputText;
+      userMessage.className = "chat-message user";
+      chatArea.appendChild(userMessage);
+      branding.style.display = "none"; // Hide branding after input
+      chatbox.classList.add("bottom"); // Move chatbox to bottom after query
+
+      try {
+        const response = await fetch(
+          "https://veriguard-backend.onrender.com/process",
+          {
+            // Update this URL
+            method: "POST",
+            body: formData,
+          }
+        );
+        if (!response.ok) {
+          throw new Error("Request failed");
         }
+        const data = await response.json();
 
-        // Display user input
-        const userMessage = document.createElement('div');
-        userMessage.textContent = inputText;
-        userMessage.className = 'chat-message user';
-        chatArea.appendChild(userMessage);
-        branding.style.display = 'none'; // Hide branding after input
-        chatbox.classList.add('bottom'); // Move chatbox to bottom after query
+        const reply = document.createElement("div");
+        reply.innerHTML = data.summary; // Render formatted summary with links
+        reply.className = "chat-message reply";
+        chatArea.appendChild(reply);
 
-        try {
-            const response = await fetch('https://veriguard-backend.onrender.com/process', {
-                method: 'POST',
-                body: formData
-            });
-            if (!response.ok) {
-                throw new Error('Request failed');
-            }
-            const data = await response.json();
-
-            const reply = document.createElement('div');
-            reply.textContent = data.grok_analysis || 'No response available';
-            reply.className = 'chat-message reply';
-            chatArea.appendChild(reply);
-
-            const chat = {
-                timestamp: new Date().toLocaleString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
-                title: `Chat ${chatHistory.length + 1}`,
-                extracted_text: data.extracted_text || inputText,
-                pubmed_results: data.pubmed_results || [],
-                fact_checks: data.fact_checks || [],
-                grok_analysis: data.grok_analysis || '',
-                chatgpt_analysis: data.chatgpt_analysis || ''
-            };
-            chatHistory.push(chat);
-            localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
-            renderChatHistory();
-            loadChat(chatHistory.length - 1);
-        } catch (error) {
-            const reply = document.createElement('div');
-            reply.textContent = `Error: ${error.message}`;
-            reply.className = 'chat-message reply';
-            chatArea.appendChild(reply);
-        } finally {
-            sendBtn.disabled = false;
-            chatInput.value = '';
-            fileUpload.value = '';
-        }
+        const chat = {
+          timestamp: new Date().toLocaleString("en-US", {
+            hour12: true,
+            hour: "2-digit",
+            minute: "2-digit",
+            timeZone: "Asia/Kolkata",
+          }),
+          title: `Chat ${chatHistory.length + 1}`,
+          extracted_text: data.extracted_text || inputText,
+          pubmed_results: data.sources.pubmed || [],
+          fact_checks: data.sources.fact_checks || [],
+          grok_analysis: "", // Removed as we're using summary
+          chatgpt_analysis: "", // Removed
+        };
+        chatHistory.push(chat);
+        localStorage.setItem("chatHistory", JSON.stringify(chatHistory));
+        renderChatHistory();
+        loadChat(chatHistory.length - 1);
+      } catch (error) {
+        const reply = document.createElement("div");
+        reply.textContent = `Error: ${error.message}`;
+        reply.className = "chat-message reply";
+        chatArea.appendChild(reply);
+      } finally {
+        sendBtn.disabled = false;
+        chatInput.value = "";
+        fileUpload.value = "";
+      }
     });
 
     // Handle Enter key
