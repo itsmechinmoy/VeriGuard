@@ -6,7 +6,7 @@ from PIL import Image
 import io
 from dotenv import load_dotenv
 import google.generativeai as genai  # For Gemini
-from openai import OpenAI  # For DeepSeek via OpenRouter
+from openai import OpenAI  # For DeepSeek via OpenRouter compatibility
 
 load_dotenv()
 
@@ -23,12 +23,13 @@ app.add_middleware(
 
 # API Keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+DEEPSEEK_API_KEY = os.getenv("OPENAI_API_KEY")  # Aligned with OpenRouter's expectation
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # Initialize clients
 genai.configure(api_key=GEMINI_API_KEY)
-deepseek_client = OpenAI(
+# Use OpenAI client for DeepSeek via OpenRouter, explicitly named for clarity
+deepseek_router_client = OpenAI(
     api_key=DEEPSEEK_API_KEY,
     base_url="https://openrouter.ai/api/v1"
 )
@@ -101,7 +102,7 @@ def analyze_with_gemini(text):
         return "Gemini analysis unavailable."
 
 def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
-    """DeepSeek to rewrite into concise response (free via OpenRouter)."""
+    """DeepSeek (via OpenRouter) to rewrite into concise response."""
     if not DEEPSEEK_API_KEY:
         return "DeepSeek API key not set."
     try:
@@ -113,7 +114,7 @@ def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
         Gemini analysis: {gemini_analysis}
         Keep under 200 words, focus on key points, avoid hallucination.
         """
-        response = deepseek_client.chat.completions.create(
+        response = deepseek_router_client.chat.completions.create(
             model="deepseek/deepseek-chat",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=300,
