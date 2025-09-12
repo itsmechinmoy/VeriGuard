@@ -1,107 +1,150 @@
-document.addEventListener("DOMContentLoaded", () => {
-  const inputMethodRadios = document.querySelectorAll(
-    'input[name="input-method"]'
-  );
-  const uploadInput = document.getElementById("upload-input");
-  const urlInput = document.getElementById("url-input");
-  const textInput = document.getElementById("text-input");
-  const submitBtn = document.getElementById("submit-btn");
-  const resultsDiv = document.getElementById("results");
-  const errorDiv = document.getElementById("error");
-  const textContent = document.getElementById("text-content");
-  const pubmedList = document.getElementById("pubmed-list");
-  const factCheckList = document.getElementById("fact-check-list");
-  const grokContent = document.getElementById("grok-content");
+document.addEventListener('DOMContentLoaded', () => {
+    const chatInput = document.getElementById('chat-input');
+    const fileUpload = document.getElementById('file-upload');
+    const sendBtn = document.getElementById('send-btn');
+    const chatList = document.getElementById('chat-list');
+    const sidebar = document.querySelector('.sidebar');
+    const askButton = document.querySelector('.ask-button');
+    const chatArea = document.getElementById('chat-area');
+    const branding = document.querySelector('.branding');
+    const chatbox = document.querySelector('.chatbox');
+    let chatHistory = JSON.parse(localStorage.getItem('chatHistory') || '[]');
+    let currentChatId = null;
 
-  // Toggle input fields
-  inputMethodRadios.forEach((radio) => {
-    radio.addEventListener("change", () => {
-      uploadInput.classList.add("hidden");
-      urlInput.classList.add("hidden");
-      textInput.classList.add("hidden");
-      if (radio.value === "upload") uploadInput.classList.remove("hidden");
-      if (radio.value === "url") urlInput.classList.remove("hidden");
-      if (radio.value === "text") textInput.classList.remove("hidden");
+    // History is open by default
+    sidebar.classList.add('expanded');
+    chatList.classList.remove('hidden');
+
+    // Load chat history with nesting
+    function renderChatHistory() {
+        chatList.innerHTML = '';
+        chatHistory.forEach((chat, index) => {
+            const chatItem = document.createElement('div');
+            chatItem.className = 'chat-item-nested';
+            chatItem.textContent = `${chat.timestamp} - ${chat.title || `Chat ${index + 1}`}`;
+            chatItem.onclick = () => loadChat(index);
+            chatList.appendChild(chatItem);
+        });
+    }
+
+    // Load a specific chat
+    function loadChat(index) {
+        currentChatId = index;
+        chatArea.innerHTML = ''; // Clear previous content
+        const chat = chatHistory[index];
+        const userMessage = document.createElement('div');
+        userMessage.textContent = chat.extracted_text || inputText;
+        userMessage.className = 'chat-message user';
+        chatArea.appendChild(userMessage);
+        if (chat.grok_analysis) {
+            const reply = document.createElement('div');
+            reply.textContent = chat.grok_analysis;
+            reply.className = 'chat-message reply';
+            chatArea.appendChild(reply);
+        }
+        branding.style.display = 'none'; // Hide branding
+        chatbox.classList.add('bottom'); // Move chatbox to bottom
+    }
+
+    // Create new chat
+    askButton.addEventListener('click', () => {
+        currentChatId = null;
+        chatArea.innerHTML = '';
+        branding.style.display = 'flex'; // Show branding for new chat
+        chatbox.classList.remove('bottom'); // Reset chatbox position
+        chatInput.value = '';
+        fileUpload.value = '';
+        chatInput.focus();
     });
-  });
 
-  // Handle form submission
-  submitBtn.addEventListener("click", async () => {
-    resultsDiv.classList.add("hidden");
-    errorDiv.classList.add("hidden");
-    submitBtn.textContent = "Analyzing...";
-    submitBtn.disabled = true;
+    // Handle file upload click
+    document.querySelector('.upload-icon').addEventListener('click', () => {
+        fileUpload.click();
+    });
 
-    const formData = new FormData();
-    const inputMethod = document.querySelector(
-      'input[name="input-method"]:checked'
-    ).value;
-    const googleApiKey = document.getElementById("google-api-key").value;
-    const xaiApiKey = document.getElementById("xai-api-key").value;
+    // Handle form submission
+    sendBtn.addEventListener('click', async () => {
+        sendBtn.disabled = true;
 
-    if (inputMethod === "upload") {
-      const fileInput = document.getElementById("image-file");
-      if (fileInput.files[0]) formData.append("file", fileInput.files[0]);
-    } else if (inputMethod === "url") {
-      const imageUrl = document.getElementById("image-url").value;
-      if (imageUrl) formData.append("image_url", imageUrl);
-    } else if (inputMethod === "text") {
-      const text = document.getElementById("text-area").value;
-      if (text) formData.append("text", text);
+        const formData = new FormData();
+        const inputText = chatInput.value.trim();
+        const file = fileUpload.files[0];
+
+        if (file) {
+            formData.append('file', file);
+        } else if (inputText && (inputText.startsWith('http://') || inputText.startsWith('https://'))) {
+            formData.append('image_url', inputText);
+        } else if (inputText) {
+            formData.append('text', inputText);
+        } else {
+            sendBtn.disabled = false;
+            return;
+        }
+
+        // Display user input
+        const userMessage = document.createElement('div');
+        userMessage.textContent = inputText;
+        userMessage.className = 'chat-message user';
+        chatArea.appendChild(userMessage);
+        branding.style.display = 'none'; // Hide branding after input
+        chatbox.classList.add('bottom'); // Move chatbox to bottom after query
+
+        try {
+            const response = await fetch('https://veriguard-backend.onrender.com/process', {
+                method: 'POST',
+                body: formData
+            });
+            if (!response.ok) {
+                throw new Error('Request failed');
+            }
+            const data = await response.json();
+
+            const reply = document.createElement('div');
+            reply.textContent = data.grok_analysis || 'No response available';
+            reply.className = 'chat-message reply';
+            chatArea.appendChild(reply);
+
+            const chat = {
+                timestamp: new Date().toLocaleString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
+                title: `Chat ${chatHistory.length + 1}`,
+                extracted_text: data.extracted_text || inputText,
+                pubmed_results: data.pubmed_results || [],
+                fact_checks: data.fact_checks || [],
+                grok_analysis: data.grok_analysis || '',
+                chatgpt_analysis: data.chatgpt_analysis || ''
+            };
+            chatHistory.push(chat);
+            localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+            renderChatHistory();
+            loadChat(chatHistory.length - 1);
+        } catch (error) {
+            const reply = document.createElement('div');
+            reply.textContent = `Error: ${error.message}`;
+            reply.className = 'chat-message reply';
+            chatArea.appendChild(reply);
+        } finally {
+            sendBtn.disabled = false;
+            chatInput.value = '';
+            fileUpload.value = '';
+        }
+    });
+
+    // Handle Enter key
+    chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendBtn.click();
+        }
+    });
+
+    // Register service worker for PWA
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/static/service-worker.js')
+            .then(reg => console.log('Service Worker registered', reg))
+            .catch(err => console.error('Service Worker registration failed', err));
     }
 
-    try {
-      const response = await fetch("/process", {
-        method: "POST",
-        body: formData,
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Request failed");
-      }
-      const data = await response.json();
-
-      // Display results
-      textContent.textContent = data.extracted_text || "No text extracted";
-      pubmedList.innerHTML = data.pubmed_results.length
-        ? data.pubmed_results
-            .map((r) => `<li>${r.title} by ${r.authors} (${r.pubdate})</li>`)
-            .join("")
-        : "<li>No PubMed articles found.</li>";
-      factCheckList.innerHTML = data.fact_checks.length
-        ? data.fact_checks
-            .map(
-              (c) =>
-                `<li>Claim: ${c.text || "No text"}<ul>${
-                  c.claimReview
-                    ?.map(
-                      (r) =>
-                        `<li>Rating: ${r.textualRating || "N/A"} by ${
-                          r.publisher?.name || "Unknown"
-                        } (<a href="${r.url}" target="_blank">Link</a>)</li>`
-                    )
-                    .join("") || ""
-                }</ul></li>`
-            )
-            .join("")
-        : "<li>No fact checks found.</li>";
-      grokContent.textContent =
-        data.grok_analysis || "No Grok analysis available.";
-      resultsDiv.classList.remove("hidden");
-    } catch (error) {
-      errorDiv.textContent = error.message;
-      errorDiv.classList.remove("hidden");
-    } finally {
-      submitBtn.textContent = "Analyze";
-      submitBtn.disabled = false;
-    }
-  });
-
-  // Register service worker for PWA
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker
-      .register("/static/service-worker.js")
-      .then((reg) => console.log("Service Worker registered", reg))
-      .catch((err) => console.error("Service Worker registration failed", err));
-  }
+    // Initial render
+    renderChatHistory();
+    chatInput.focus();
 });
