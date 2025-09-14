@@ -28,6 +28,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Load chat history
   function renderChatHistory() {
+    console.log("Rendering chat history:", chatHistory);
     chatList.innerHTML = "";
     chatHistory.forEach((chat, index) => {
       const chatItem = document.createElement("div");
@@ -43,6 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Load a specific chat
   function loadChat(index) {
     currentChatId = chatHistory[index].chat_id;
+    console.log("Loading chat:", currentChatId);
     chatArea.innerHTML = "";
     chatArea.appendChild(loadingSpinner);
     const chat = chatHistory[index];
@@ -52,7 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
     chatArea.appendChild(userMessage);
     if (chat.summary) {
       const reply = document.createElement("div");
-      reply.innerHTML = chat.summary.replace(/\n/g, "<br>");
+      reply.innerHTML = marked.parse(chat.summary);
       reply.className = "chat-message reply";
       chatArea.appendChild(reply);
     }
@@ -62,7 +64,14 @@ document.addEventListener("DOMContentLoaded", () => {
     chatArea.scrollTop = chatArea.scrollHeight;
     chatInput.focus();
     try {
-      history.pushState({ chat_id: chat.chat_id }, "", `/chat/${chat.chat_id}`);
+      if (chat.chat_id) {
+        history.pushState(
+          { chat_id: chat.chat_id },
+          "",
+          `/chat/${chat.chat_id}`
+        );
+        console.log("URL updated to:", `/chat/${chat.chat_id}`);
+      }
     } catch (e) {
       console.error("URL update error:", e);
     }
@@ -71,6 +80,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Handle URL routing
   function handleRouting() {
     const path = window.location.pathname;
+    console.log("Handling route:", path);
     const match = path.match(/\/chat\/(.+)/);
     if (match) {
       const chatId = match[1];
@@ -89,6 +99,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Create new chat
   function startNewChat() {
     currentChatId = null;
+    console.log("Starting new chat");
     chatArea.innerHTML = "";
     chatArea.appendChild(loadingSpinner);
     branding.style.display = "flex";
@@ -99,6 +110,7 @@ document.addEventListener("DOMContentLoaded", () => {
     chatInput.focus();
     try {
       history.replaceState({}, "", "/");
+      console.log("URL reset to: /");
     } catch (e) {
       console.error("URL reset error:", e);
     }
@@ -115,9 +127,11 @@ document.addEventListener("DOMContentLoaded", () => {
   sendBtn.addEventListener("click", async () => {
     if (!chatInput.value.trim() && !fileUpload.files[0]) return;
 
+    console.log("Submitting query:", chatInput.value || "Image");
     sendBtn.disabled = true;
     chatbox.style.display = "none";
     loadingSpinner.style.display = "block";
+    console.log("Spinner display:", loadingSpinner.style.display);
 
     const formData = new FormData();
     const inputText = chatInput.value.trim();
@@ -153,11 +167,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 15000);
 
     try {
+      console.log("Fetching from: https://veriguard.onrender.com/process");
       const response = await fetch("https://veriguard.onrender.com/process", {
         method: "POST",
         body: formData,
         signal: controller.signal,
+        headers: {
+          "Cache-Control": "no-cache",
+        },
       });
+      console.log("Fetch response status:", response.status);
       clearTimeout(timeoutId);
       if (!response.ok) {
         const errorText = await response.text();
@@ -170,10 +189,11 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log("Backend response:", data);
 
       const reply = document.createElement("div");
-      reply.innerHTML = (
+      reply.innerHTML = marked.parse(
         data.summary || "Error: No summary provided by backend"
-      ).replace(/\n/g, "<br>");
+      );
       reply.className = `chat-message reply ${data.summary ? "" : "error"}`;
+      console.log("Appending reply:", reply.innerHTML);
       chatArea.appendChild(reply);
       chatArea.scrollTop = chatArea.scrollHeight;
 
@@ -196,16 +216,19 @@ document.addEventListener("DOMContentLoaded", () => {
       renderChatHistory();
       currentChatId = chat.chat_id;
       try {
-        history.pushState(
-          { chat_id: chat.chat_id },
-          "",
-          `/chat/${chat.chat_id}`
-        );
+        if (data.chat_id) {
+          history.pushState(
+            { chat_id: chat.chat_id },
+            "",
+            `/chat/${chat.chat_id}`
+          );
+          console.log("URL updated to:", `/chat/${chat.chat_id}`);
+        }
       } catch (e) {
         console.error("URL update error:", e);
       }
     } catch (error) {
-      console.error("Fetch error:", error.name, error.message);
+      console.error("Fetch error:", error.name, error.message, error.stack);
       const reply = document.createElement("div");
       reply.textContent = `Error: ${error.message}. Please try again or check your connection.`;
       reply.className = "chat-message reply error";
@@ -216,6 +239,7 @@ document.addEventListener("DOMContentLoaded", () => {
       chatbox.style.display = "flex";
       chatbox.classList.add("bottom");
       loadingSpinner.style.display = "none";
+      console.log("Spinner display:", loadingSpinner.style.display);
       chatInput.value = "";
       fileUpload.value = "";
       chatInput.focus();
@@ -245,6 +269,13 @@ document.addEventListener("DOMContentLoaded", () => {
       .register("service-worker.js")
       .then((reg) => console.log("Service Worker registered", reg))
       .catch((err) => console.error("Service Worker registration failed", err));
+  }
+
+  // Force cache clear
+  if ("caches" in window) {
+    caches.keys().then((names) => {
+      for (let name of names) caches.delete(name);
+    });
   }
 
   // Initial render
