@@ -42,12 +42,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Load a specific chat
   function loadChat(index) {
-    currentChatId = index;
+    currentChatId = chatHistory[index].chat_id;
     chatArea.innerHTML = "";
     chatArea.appendChild(loadingSpinner);
     const chat = chatHistory[index];
     const userMessage = document.createElement("div");
-    userMessage.textContent = chat.extracted_text;
+    userMessage.textContent = chat.extracted_text || "No query provided";
     userMessage.className = "chat-message user";
     chatArea.appendChild(userMessage);
     if (chat.summary) {
@@ -61,10 +61,29 @@ document.addEventListener("DOMContentLoaded", () => {
     chatbox.classList.add("bottom");
     chatArea.scrollTop = chatArea.scrollHeight;
     chatInput.focus();
+    history.pushState({ chat_id: chat.chat_id }, "", `/chat/${chat.chat_id}`);
+  }
+
+  // Handle URL routing
+  function handleRouting() {
+    const path = window.location.pathname;
+    const match = path.match(/\/chat\/(.+)/);
+    if (match) {
+      const chatId = match[1];
+      const index = chatHistory.findIndex((chat) => chat.chat_id === chatId);
+      if (index !== -1) {
+        loadChat(index);
+      } else {
+        history.replaceState({}, "", "/");
+        startNewChat();
+      }
+    } else {
+      startNewChat();
+    }
   }
 
   // Create new chat
-  askButton.addEventListener("click", () => {
+  function startNewChat() {
     currentChatId = null;
     chatArea.innerHTML = "";
     chatArea.appendChild(loadingSpinner);
@@ -74,7 +93,10 @@ document.addEventListener("DOMContentLoaded", () => {
     chatInput.value = "";
     fileUpload.value = "";
     chatInput.focus();
-  });
+    history.replaceState({}, "", "/");
+  }
+
+  askButton.addEventListener("click", startNewChat);
 
   // Handle file upload click
   document.querySelector(".upload-icon").addEventListener("click", () => {
@@ -110,7 +132,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const userMessage = document.createElement("div");
-    userMessage.textContent = inputText;
+    userMessage.textContent = inputText || "Image uploaded";
     userMessage.className = "chat-message user";
     chatArea.appendChild(userMessage);
     branding.style.display = "none";
@@ -141,11 +163,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const reply = document.createElement("div");
       reply.innerHTML = data.summary || "Error: No summary provided by backend";
-      reply.className = "chat-message reply";
+      reply.className = `chat-message reply ${data.summary ? "" : "error"}`;
       chatArea.appendChild(reply);
       chatArea.scrollTop = chatArea.scrollHeight;
 
       const chat = {
+        chat_id: data.chat_id || `chat-${chatHistory.length + 1}`,
         timestamp: new Date().toLocaleString("en-US", {
           hour12: true,
           hour: "2-digit",
@@ -153,15 +176,16 @@ document.addEventListener("DOMContentLoaded", () => {
           timeZone: "Asia/Kolkata",
         }),
         title: data.chat_title || `Chat ${chatHistory.length + 1}`,
-        extracted_text: inputText,
+        extracted_text: inputText || "Image input",
         summary: data.summary,
-        pubmed_results: data.sources.pubmed || [],
-        fact_checks: data.sources.fact_checks || [],
+        pubmed_results: data.sources?.pubmed || [],
+        fact_checks: data.sources?.fact_checks || [],
       };
       chatHistory.push(chat);
       localStorage.setItem("chatHistory", JSON.stringify(chatHistory));
       renderChatHistory();
-      currentChatId = chatHistory.length - 1;
+      currentChatId = chat.chat_id;
+      history.pushState({ chat_id: chat.chat_id }, "", `/chat/${chat.chat_id}`);
     } catch (error) {
       console.error("Fetch error:", error.name, error.message);
       const reply = document.createElement("div");
@@ -188,6 +212,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // Toggle history visibility
+  document.querySelector(".toggle-history").addEventListener("click", () => {
+    sidebar.classList.toggle("expanded");
+    chatList.classList.toggle("hidden");
+  });
+
+  // Handle popstate for browser back/forward
+  window.addEventListener("popstate", handleRouting);
+
   // Register service worker for PWA
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker
@@ -198,5 +231,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Initial render
   renderChatHistory();
+  handleRouting();
   chatInput.focus();
 });

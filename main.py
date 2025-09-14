@@ -13,6 +13,7 @@ import re
 from difflib import SequenceMatcher
 from functools import lru_cache
 import hashlib
+import uuid
 
 load_dotenv()
 
@@ -69,7 +70,7 @@ def extract_query(text):
     logging.info(f"Extracting query from text: {text}")
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
-        prompt = f"Identify the primary health-related term or symptom in this text: '{text}'. Return only the term (e.g., 'fever', 'headache', 'stomachache'). If none, return the most relevant word or phrase."
+        prompt = f"Extract the main health symptom from: '{text}'. Return only the symptom (e.g., 'fever')."
         response = model.generate_content(prompt)
         query = response.text.strip()
         query = correct_medical_term(query)
@@ -97,7 +98,7 @@ def perform_ai_ocr(image_file):
             image = Image.open(io.BytesIO(image_data))
         else:
             image = image_file
-        prompt = "Extract all text from this image accurately, especially health advice or handwritten notes. Output only the extracted text."
+        prompt = "Extract health-related text from this image. Output only the text."
         response = model.generate_content([prompt, image])
         return response.text.strip()
     except Exception as e:
@@ -179,7 +180,7 @@ def analyze_with_gemini(text):
         return "Gemini API key not set; analysis skipped."
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
-        prompt = f"Analyze this medical/health advice for accuracy and reliability: {text}. Provide key facts, potential risks, and sources if known. Keep concise, under 100 words."
+        prompt = f"Analyze health advice: {text}. Provide key facts and risks. Keep under 50 words."
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
@@ -199,16 +200,12 @@ async def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
             "X-Title": "VeriGuard"
         }
         prompt = f"""
-        Summarize this medical advice in concise bullet points (no header). Include source links, flag misinformation, keep under 100 words.
-        Text: {text}
-        PubMed: {pubmed}
-        Fact checks: {fact_checks}
-        Analysis: {gemini_analysis}
+        Summarize in bullet points: {text}. Use {pubmed}, {fact_checks}, {gemini_analysis}. Include links, flag misinformation, under 50 words.
         """
         payload = {
             "model": "deepseek/deepseek-chat",
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 200,
+            "max_tokens": 100,
             "temperature": 0.1
         }
         async with aiohttp.ClientSession() as session:
@@ -230,12 +227,17 @@ def generate_chat_title(text):
     """Generate a concise chat title using Gemini."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
-        prompt = f"Summarize this medical query into a short title (5-10 words) starting with 'Issues with': {text}"
+        prompt = f"Summarize query to 5-10 words starting 'Issues with': {text}"
         response = model.generate_content(prompt)
-        return response.text.strip()
+        title = response.text.strip()
+        logging.info(f"Generated chat title: {title}")
+        return title
     except Exception as e:
         logging.error(f"Gemini title generation error: {str(e)}")
-        return f"Issues with {extract_query(text)}"
+        query = extract_query(text)
+        title = f"Issues with {query}"
+        logging.info(f"Fallback chat title: {title}")
+        return title
 
 @app.get("/")
 async def root():
@@ -248,7 +250,8 @@ async def head_root():
 @app.post("/process")
 async def process_input(file: UploadFile = None, image_url: str = Form(None), text: str = Form(None)):
     start_time = time.time()
-    logging.info(f"Starting /process request with text: {text}, file: {file and file.filename}, image_url: {image_url}")
+    chat_id = str(uuid.uuid4())
+    logging.info(f"Starting /process request with chat_id: {chat_id}, text: {text}, file: {file and file.filename}, image_url: {image_url}")
     try:
         cache_key = None
         if file:
@@ -266,6 +269,7 @@ async def process_input(file: UploadFile = None, image_url: str = Form(None), te
             if cache_key in response_cache:
                 logging.info(f"Cache hit for key: {cache_key}")
                 cached = response_cache[cache_key]
+                cached["chat_id"] = chat_id
                 logging.info(f"Total request time: {time.time() - start_time:.2f} seconds")
                 return cached
 
@@ -316,6 +320,7 @@ async def process_input(file: UploadFile = None, image_url: str = Form(None), te
             summary = "No summary available due to processing error."
 
         response = {
+            "chat_id": chat_id,
             "summary": summary,
             "sources": {
                 "pubmed": pubmed_results,
@@ -336,6 +341,7 @@ async def process_input(file: UploadFile = None, image_url: str = Form(None), te
     except Exception as e:
         logging.error(f"Error in /process: {str(e)}")
         return {
+            "chat_id": chat_id,
             "summary": f"Error processing request: {str(e)}",
             "sources": {
                 "pubmed": [],

@@ -165,6 +165,11 @@ body {
     align-self: flex-end;
 }
 
+.chat-message.error {
+    color: #dc2626;
+    align-self: flex-end;
+}
+
 .chat-input {
     flex: 1;
     background: none;
@@ -212,6 +217,15 @@ body {
     background-color: #2563EB;
 }
 
+ul {
+    list-style-type: none;
+    padding-left: 0;
+}
+
+a {
+    color: #93C5FD;
+}
+
 .loading-spinner {
     display: none;
     margin: 1rem 0;
@@ -230,9 +244,8 @@ body {
 }
 
 @keyframes spin {
-    100% {
-        transform: rotate(360deg);
-    }
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 @keyframes dash {
@@ -247,15 +260,6 @@ body {
         stroke-dashoffset: 90;
         transform: rotate(360deg);
     }
-}
-
-ul {
-    list-style-type: none;
-    padding-left: 0;
-}
-
-a {
-    color: #93C5FD;
 }
 
 @media (max-width: 768px) {
