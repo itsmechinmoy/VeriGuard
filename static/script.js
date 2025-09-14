@@ -129,8 +129,12 @@ document.addEventListener("DOMContentLoaded", () => {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
-      if (!response.ok)
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `HTTP error! status: ${response.status}, message: ${errorText}`
+        );
+      }
 
       const data = await response.json();
       console.log("Backend response:", data);
@@ -159,10 +163,10 @@ document.addEventListener("DOMContentLoaded", () => {
       renderChatHistory();
       currentChatId = chatHistory.length - 1;
     } catch (error) {
-      console.error("Fetch error:", error.message, error.name);
+      console.error("Fetch error:", error.name, error.message);
       const reply = document.createElement("div");
-      reply.textContent = `Error: ${error.message}`;
-      reply.className = "chat-message reply";
+      reply.textContent = `Error: ${error.message}. Please try again or check your connection.`;
+      reply.className = "chat-message reply error";
       chatArea.appendChild(reply);
       chatArea.scrollTop = chatArea.scrollHeight;
     } finally {

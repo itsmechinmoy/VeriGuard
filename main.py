@@ -63,21 +63,21 @@ def correct_medical_term(term):
             return correct_term
     return term
 
-async def extract_query(text):
+def extract_query(text):
     """Extract key medical term using Gemini, with typo correction and fallback."""
     text = text.lower().strip()
     logging.info(f"Extracting query from text: {text}")
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"Identify the primary health-related term or symptom in this text: '{text}'. Return only the term (e.g., 'fever', 'headache', 'stomachache'). If none, return the most relevant word or phrase."
-        response = await model.generate_content_async(prompt)
+        response = model.generate_content(prompt)
         query = response.text.strip()
         query = correct_medical_term(query)
         logging.info(f"Gemini extracted query: {query}")
         return query
     except Exception as e:
         logging.error(f"Gemini query extraction error: {str(e)}")
-        non_medical = ['i', 'im', 'ive', 'having', 'have', 'a', 'an', 'the', 'and', 'or', 'something', 'what', 'to', 'do']
+        non_medical = ['i', 'im', 'ive', 'having', 'have', 'a', 'an', 'the', 'and', 'or', 'something', 'what', 'to', 'do', 'so', 'now']
         cleaned = re.sub(r'[^\w\s]', '', text)
         words = [w for w in cleaned.split() if w not in non_medical][:2]
         query = " ".join(words)
@@ -85,7 +85,7 @@ async def extract_query(text):
         logging.info(f"Fallback query: {query}")
         return query
 
-async def perform_ai_ocr(image_file):
+def perform_ai_ocr(image_file):
     """Gemini for OCR (free tier)."""
     if not GEMINI_API_KEY:
         logging.error("Gemini API key not set")
@@ -93,12 +93,12 @@ async def perform_ai_ocr(image_file):
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         if hasattr(image_file, 'read'):
-            image_data = await image_file.read()
+            image_data = image_file.read()
             image = Image.open(io.BytesIO(image_data))
         else:
             image = image_file
         prompt = "Extract all text from this image accurately, especially health advice or handwritten notes. Output only the extracted text."
-        response = await model.generate_content_async([prompt, image])
+        response = model.generate_content([prompt, image])
         return response.text.strip()
     except Exception as e:
         logging.error(f"OCR Error: {str(e)}")
@@ -106,13 +106,13 @@ async def perform_ai_ocr(image_file):
 
 async def search_pubmed(query):
     """Free PubMed search via NCBI EUtils."""
-    simplified_query = await extract_query(query)
+    simplified_query = extract_query(query)
     logging.info(f"Searching PubMed with query: {simplified_query}")
     try:
         async with aiohttp.ClientSession() as session:
             esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
             params = {"db": "pubmed", "term": simplified_query + " causes", "retmax": 1, "retmode": "json"}
-            async with session.get(esearch_url, params=params, timeout=5) as response:
+            async with session.get(esearch_url, params=params, timeout=10) as response:
                 logging.info(f"PubMed esearch status: {response.status}, response: {(await response.text())[:500]}")
                 response.raise_for_status()
                 data = await response.json()
@@ -122,7 +122,7 @@ async def search_pubmed(query):
                     return []
                 esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
                 params = {"db": "pubmed", "id": ",".join(ids), "retmode": "json"}
-                async with session.get(esummary_url, params=params, timeout=5) as response:
+                async with session.get(esummary_url, params=params, timeout=10) as response:
                     logging.info(f"PubMed esummary status: {response.status}, response: {(await response.text())[:500]}")
                     response.raise_for_status()
                     data = await response.json()
@@ -143,7 +143,7 @@ async def search_pubmed(query):
 
 async def search_fact_check(query):
     """Free Google Fact Check Tools API."""
-    simplified_query = await extract_query(query)
+    simplified_query = extract_query(query)
     logging.info(f"Searching fact check with query: {simplified_query}")
     if not GOOGLE_API_KEY:
         logging.error("Google API key not set")
@@ -152,7 +152,7 @@ async def search_fact_check(query):
         async with aiohttp.ClientSession() as session:
             url = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
             params = {"query": simplified_query, "key": GOOGLE_API_KEY, "pageSize": 3}
-            async with session.get(url, params=params, timeout=5) as response:
+            async with session.get(url, params=params, timeout=10) as response:
                 logging.info(f"Fact check status: {response.status}, response: {(await response.text())[:500]}")
                 response.raise_for_status()
                 data = await response.json()
@@ -172,7 +172,7 @@ async def search_fact_check(query):
         logging.error(f"Fact check error: {str(e)}, query: {simplified_query}")
         return []
 
-async def analyze_with_gemini(text):
+def analyze_with_gemini(text):
     """Gemini for medical analysis (free tier)."""
     if not GEMINI_API_KEY:
         logging.error("Gemini API key not set")
@@ -180,7 +180,7 @@ async def analyze_with_gemini(text):
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"Analyze this medical/health advice for accuracy and reliability: {text}. Provide key facts, potential risks, and sources if known. Keep concise, under 100 words."
-        response = await model.generate_content_async(prompt)
+        response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
         logging.error(f"Gemini analysis error: {str(e)}")
@@ -216,7 +216,7 @@ async def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
                 "https://openrouter.ai/api/v1/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=5
+                timeout=10
             ) as response:
                 logging.info(f"DeepSeek status: {response.status}, response: {(await response.text())[:500]}")
                 response.raise_for_status()
@@ -226,16 +226,16 @@ async def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
         logging.error(f"DeepSeek error: {str(e)}")
         return f"Error in summarization: {str(e)}"
 
-async def generate_chat_title(text):
+def generate_chat_title(text):
     """Generate a concise chat title using Gemini."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"Summarize this medical query into a short title (5-10 words) starting with 'Issues with': {text}"
-        response = await model.generate_content_async(prompt)
+        response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
         logging.error(f"Gemini title generation error: {str(e)}")
-        return f"Issues with {await extract_query(text)}"
+        return f"Issues with {extract_query(text)}"
 
 @app.get("/")
 async def root():
@@ -248,18 +248,18 @@ async def head_root():
 @app.post("/process")
 async def process_input(file: UploadFile = None, image_url: str = Form(None), text: str = Form(None)):
     start_time = time.time()
-    logging.info("Starting /process request")
+    logging.info(f"Starting /process request with text: {text}, file: {file and file.filename}, image_url: {image_url}")
     try:
         cache_key = None
         if file:
-            extracted_text = await perform_ai_ocr(file)
+            extracted_text = perform_ai_ocr(file)
         elif image_url:
             async with aiohttp.ClientSession() as session:
-                response = await session.get(image_url, timeout=5)
+                response = await session.get(image_url, timeout=10)
                 if response.status != 200:
                     raise HTTPException(400, detail="Failed to load image from URL")
                 image = Image.open(io.BytesIO(await response.read()))
-                extracted_text = await perform_ai_ocr(image)
+                extracted_text = perform_ai_ocr(image)
         else:
             extracted_text = text.strip() if text else ""
             cache_key = get_cache_key(extracted_text)
@@ -279,22 +279,26 @@ async def process_input(file: UploadFile = None, image_url: str = Form(None), te
         title_start = time.time()
         summary_start = time.time()
         
+        # Run async tasks
         pubmed_task = search_pubmed(extracted_text)
         fact_check_task = search_fact_check(extracted_text)
-        gemini_task = analyze_with_gemini(extracted_text)
-        title_task = generate_chat_title(extracted_text)
-        summary_task = summarize_with_deepseek(extracted_text, [], [], "Pending analysis...")  # Start early with placeholders
+        summary_task = summarize_with_deepseek(extracted_text, [], [], "Pending analysis...")
+        
+        # Run sync tasks in threadpool
+        loop = asyncio.get_running_loop()
+        gemini_task = loop.run_in_executor(None, analyze_with_gemini, extracted_text)
+        title_task = loop.run_in_executor(None, generate_chat_title, extracted_text)
         
         results = await asyncio.gather(
-            pubmed_task, fact_check_task, gemini_task, title_task, summary_task,
+            pubmed_task, fact_check_task, summary_task, gemini_task, title_task,
             return_exceptions=True
         )
         
         pubmed_results = results[0] if not isinstance(results[0], Exception) else []
         fact_checks = results[1] if not isinstance(results[1], Exception) else []
-        gemini_analysis = results[2] if not isinstance(results[2], Exception) else "Analysis unavailable"
-        chat_title = results[3] if not isinstance(results[3], Exception) else f"Issues with {await extract_query(extracted_text)}"
-        summary_prelim = results[4] if not isinstance(results[4], Exception) else "Summary unavailable"
+        summary_prelim = results[2] if not isinstance(results[2], Exception) else "Summary unavailable"
+        gemini_analysis = results[3] if not isinstance(results[3], Exception) else "Analysis unavailable"
+        chat_title = results[4] if not isinstance(results[4], Exception) else f"Issues with {extract_query(extracted_text)}"
         
         # Update summary with actual results
         if pubmed_results or fact_checks or gemini_analysis != "Pending analysis...":
@@ -326,7 +330,8 @@ async def process_input(file: UploadFile = None, image_url: str = Form(None), te
 
         logging.info(f"Total request time: {time.time() - start_time:.2f} seconds")
         return response
-    except HTTPException:
+    except HTTPException as he:
+        logging.error(f"HTTP error in /process: {str(he)}")
         raise
     except Exception as e:
         logging.error(f"Error in /process: {str(e)}")
