@@ -24,6 +24,7 @@ app.add_middleware(
 # API Keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+DEEPSEEK_API_KEY = os.getenv("OPENAI_API_KEY")  # Ensure this is set in Render
 
 # Initialize Gemini
 genai.configure(api_key=GEMINI_API_KEY)
@@ -109,12 +110,11 @@ def analyze_with_gemini(text):
 
 def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
     """DeepSeek (via OpenRouter) to rewrite into concise response."""
-    deepseek_api_key = os.getenv("OPENAI_API_KEY")
-    if not deepseek_api_key:
+    if not DEEPSEEK_API_KEY:
         return "DeepSeek API key not set."
     try:
         deepseek_router_client = OpenAI(
-            api_key=deepseek_api_key,
+            api_key=DEEPSEEK_API_KEY,
             base_url="https://openrouter.ai/api/v1"
         )
         prompt = f"""
@@ -139,6 +139,11 @@ def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
 @app.get("/")
 async def root():
     return {"message": "VeriGuard Backend is running. Use /process for health advice analysis."}
+
+# Add HEAD endpoint to handle health checks
+@app.head("/")
+async def head_root():
+    return {"message": "VeriGuard Backend is running."}
 
 @app.post("/process")
 async def process_input(file: UploadFile = None, image_url: str = Form(None), text: str = Form(None)):
