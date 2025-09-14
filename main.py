@@ -3,7 +3,6 @@ import asyncio
 import aiohttp
 from fastapi import FastAPI, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import requests
 from PIL import Image
 import io
 from dotenv import load_dotenv
@@ -12,6 +11,8 @@ import time
 import logging
 import re
 from difflib import SequenceMatcher
+from functools import lru_cache
+import hashlib
 
 load_dotenv()
 
@@ -40,6 +41,14 @@ if GEMINI_API_KEY:
 else:
     logging.error("Gemini API key not set during initialization")
 
+# In-memory cache
+response_cache = {}
+
+def get_cache_key(text):
+    """Generate a cache key from input text."""
+    return hashlib.md5(text.lower().strip().encode()).hexdigest()
+
+@lru_cache(maxsize=100)
 def correct_medical_term(term):
     """Correct common typos in medical terms using similarity matching."""
     medical_terms = [
@@ -49,35 +58,34 @@ def correct_medical_term(term):
     term = term.lower().strip()
     for correct_term in medical_terms:
         similarity = SequenceMatcher(None, term, correct_term).ratio()
-        if similarity > 0.8:  # Threshold for typo correction
+        if similarity > 0.8:
             logging.info(f"Corrected '{term}' to '{correct_term}'")
             return correct_term
     return term
 
-def extract_query(text):
+async def extract_query(text):
     """Extract key medical term using Gemini, with typo correction and fallback."""
     text = text.lower().strip()
     logging.info(f"Extracting query from text: {text}")
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"Identify the primary health-related term or symptom in this text: '{text}'. Return only the term (e.g., 'fever', 'headache', 'stomachache'). If none, return the most relevant word or phrase."
-        response = model.generate_content(prompt)
+        response = await model.generate_content_async(prompt)
         query = response.text.strip()
-        query = correct_medical_term(query)  # Correct typos
+        query = correct_medical_term(query)
         logging.info(f"Gemini extracted query: {query}")
         return query
     except Exception as e:
         logging.error(f"Gemini query extraction error: {str(e)}")
-        # Fallback: clean text and use first 1-2 words
-        non_medical = ['i', 'im', 'ive', 'having', 'have', 'a', 'an', 'the', 'and', 'or', 'something']
+        non_medical = ['i', 'im', 'ive', 'having', 'have', 'a', 'an', 'the', 'and', 'or', 'something', 'what', 'to', 'do']
         cleaned = re.sub(r'[^\w\s]', '', text)
         words = [w for w in cleaned.split() if w not in non_medical][:2]
         query = " ".join(words)
-        query = correct_medical_term(query)  # Correct typos
+        query = correct_medical_term(query)
         logging.info(f"Fallback query: {query}")
         return query
 
-def perform_ai_ocr(image_file):
+async def perform_ai_ocr(image_file):
     """Gemini for OCR (free tier)."""
     if not GEMINI_API_KEY:
         logging.error("Gemini API key not set")
@@ -85,12 +93,12 @@ def perform_ai_ocr(image_file):
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         if hasattr(image_file, 'read'):
-            image_data = image_file.read()
+            image_data = await image_file.read()
             image = Image.open(io.BytesIO(image_data))
         else:
             image = image_file
         prompt = "Extract all text from this image accurately, especially health advice or handwritten notes. Output only the extracted text."
-        response = model.generate_content([prompt, image])
+        response = await model.generate_content_async([prompt, image])
         return response.text.strip()
     except Exception as e:
         logging.error(f"OCR Error: {str(e)}")
@@ -98,13 +106,13 @@ def perform_ai_ocr(image_file):
 
 async def search_pubmed(query):
     """Free PubMed search via NCBI EUtils."""
-    simplified_query = extract_query(query)
+    simplified_query = await extract_query(query)
     logging.info(f"Searching PubMed with query: {simplified_query}")
     try:
         async with aiohttp.ClientSession() as session:
             esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
             params = {"db": "pubmed", "term": simplified_query + " causes", "retmax": 1, "retmode": "json"}
-            async with session.get(esearch_url, params=params, timeout=10) as response:
+            async with session.get(esearch_url, params=params, timeout=5) as response:
                 logging.info(f"PubMed esearch status: {response.status}, response: {(await response.text())[:500]}")
                 response.raise_for_status()
                 data = await response.json()
@@ -114,7 +122,7 @@ async def search_pubmed(query):
                     return []
                 esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
                 params = {"db": "pubmed", "id": ",".join(ids), "retmode": "json"}
-                async with session.get(esummary_url, params=params, timeout=10) as response:
+                async with session.get(esummary_url, params=params, timeout=5) as response:
                     logging.info(f"PubMed esummary status: {response.status}, response: {(await response.text())[:500]}")
                     response.raise_for_status()
                     data = await response.json()
@@ -135,7 +143,7 @@ async def search_pubmed(query):
 
 async def search_fact_check(query):
     """Free Google Fact Check Tools API."""
-    simplified_query = extract_query(query)
+    simplified_query = await extract_query(query)
     logging.info(f"Searching fact check with query: {simplified_query}")
     if not GOOGLE_API_KEY:
         logging.error("Google API key not set")
@@ -144,7 +152,7 @@ async def search_fact_check(query):
         async with aiohttp.ClientSession() as session:
             url = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
             params = {"query": simplified_query, "key": GOOGLE_API_KEY, "pageSize": 3}
-            async with session.get(url, params=params, timeout=10) as response:
+            async with session.get(url, params=params, timeout=5) as response:
                 logging.info(f"Fact check status: {response.status}, response: {(await response.text())[:500]}")
                 response.raise_for_status()
                 data = await response.json()
@@ -164,22 +172,22 @@ async def search_fact_check(query):
         logging.error(f"Fact check error: {str(e)}, query: {simplified_query}")
         return []
 
-def analyze_with_gemini(text):
+async def analyze_with_gemini(text):
     """Gemini for medical analysis (free tier)."""
     if not GEMINI_API_KEY:
         logging.error("Gemini API key not set")
         return "Gemini API key not set; analysis skipped."
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
-        prompt = f"Analyze this medical/health advice for accuracy and reliability: {text}. Provide key facts, potential risks, and sources if known. Keep concise, under 200 words."
-        response = model.generate_content(prompt)
+        prompt = f"Analyze this medical/health advice for accuracy and reliability: {text}. Provide key facts, potential risks, and sources if known. Keep concise, under 100 words."
+        response = await model.generate_content_async(prompt)
         return response.text.strip()
     except Exception as e:
         logging.error(f"Gemini analysis error: {str(e)}")
         return f"Gemini analysis unavailable: {str(e)}"
 
-def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
-    """DeepSeek (via OpenRouter) using direct requests."""
+async def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
+    """DeepSeek (via OpenRouter) using async requests."""
     if not DEEPSEEK_API_KEY:
         logging.error("DeepSeek API key not set")
         return "DeepSeek API key not set."
@@ -191,41 +199,43 @@ def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
             "X-Title": "VeriGuard"
         }
         prompt = f"""
-        Provide a concise summary of the medical advice in bullet points. Start immediately with bullet points, no introductory header. Include links to sources, flag misinformation, keep under 200 words, and avoid hallucination.
-        Original text: {text}
-        PubMed sources: {pubmed}
+        Summarize this medical advice in concise bullet points (no header). Include source links, flag misinformation, keep under 100 words.
+        Text: {text}
+        PubMed: {pubmed}
         Fact checks: {fact_checks}
-        Gemini analysis: {gemini_analysis}
+        Analysis: {gemini_analysis}
         """
         payload = {
             "model": "deepseek/deepseek-chat",
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 500,
+            "max_tokens": 200,
             "temperature": 0.1
         }
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"].strip()
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=5
+            ) as response:
+                logging.info(f"DeepSeek status: {response.status}, response: {(await response.text())[:500]}")
+                response.raise_for_status()
+                data = await response.json()
+                return data["choices"][0]["message"]["content"].strip()
     except Exception as e:
         logging.error(f"DeepSeek error: {str(e)}")
         return f"Error in summarization: {str(e)}"
 
-def generate_chat_title(text):
+async def generate_chat_title(text):
     """Generate a concise chat title using Gemini."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"Summarize this medical query into a short title (5-10 words) starting with 'Issues with': {text}"
-        response = model.generate_content(prompt)
+        response = await model.generate_content_async(prompt)
         return response.text.strip()
     except Exception as e:
         logging.error(f"Gemini title generation error: {str(e)}")
-        return f"Issues with {extract_query(text)}"
+        return f"Issues with {await extract_query(text)}"
 
 @app.get("/")
 async def root():
@@ -240,48 +250,68 @@ async def process_input(file: UploadFile = None, image_url: str = Form(None), te
     start_time = time.time()
     logging.info("Starting /process request")
     try:
+        cache_key = None
         if file:
-            extracted_text = perform_ai_ocr(file.file)
+            extracted_text = await perform_ai_ocr(file)
         elif image_url:
-            response = requests.get(image_url, stream=True, timeout=10)
-            if response.status_code != 200:
-                raise HTTPException(400, detail="Failed to load image from URL")
-            image = Image.open(io.BytesIO(response.content))
-            extracted_text = perform_ai_ocr(image)
+            async with aiohttp.ClientSession() as session:
+                response = await session.get(image_url, timeout=5)
+                if response.status != 200:
+                    raise HTTPException(400, detail="Failed to load image from URL")
+                image = Image.open(io.BytesIO(await response.read()))
+                extracted_text = await perform_ai_ocr(image)
         else:
             extracted_text = text.strip() if text else ""
+            cache_key = get_cache_key(extracted_text)
+            if cache_key in response_cache:
+                logging.info(f"Cache hit for key: {cache_key}")
+                cached = response_cache[cache_key]
+                logging.info(f"Total request time: {time.time() - start_time:.2f} seconds")
+                return cached
+
         logging.info(f"Text extraction took {time.time() - start_time:.2f} seconds")
         if not extracted_text:
             raise HTTPException(400, detail="No text extracted or provided")
 
-        # Run PubMed, Fact Check, and Gemini analysis concurrently
         pubmed_start = time.time()
         fact_check_start = time.time()
         gemini_start = time.time()
+        title_start = time.time()
+        summary_start = time.time()
         
         pubmed_task = search_pubmed(extracted_text)
         fact_check_task = search_fact_check(extracted_text)
-        gemini_task = asyncio.to_thread(analyze_with_gemini, extracted_text)
+        gemini_task = analyze_with_gemini(extracted_text)
+        title_task = generate_chat_title(extracted_text)
+        summary_task = summarize_with_deepseek(extracted_text, [], [], "Pending analysis...")  # Start early with placeholders
         
-        pubmed_results, fact_checks, gemini_analysis = await asyncio.gather(
-            pubmed_task, fact_check_task, gemini_task
+        results = await asyncio.gather(
+            pubmed_task, fact_check_task, gemini_task, title_task, summary_task,
+            return_exceptions=True
         )
         
+        pubmed_results = results[0] if not isinstance(results[0], Exception) else []
+        fact_checks = results[1] if not isinstance(results[1], Exception) else []
+        gemini_analysis = results[2] if not isinstance(results[2], Exception) else "Analysis unavailable"
+        chat_title = results[3] if not isinstance(results[3], Exception) else f"Issues with {await extract_query(extracted_text)}"
+        summary_prelim = results[4] if not isinstance(results[4], Exception) else "Summary unavailable"
+        
+        # Update summary with actual results
+        if pubmed_results or fact_checks or gemini_analysis != "Pending analysis...":
+            summary = await summarize_with_deepseek(extracted_text, pubmed_results, fact_checks, gemini_analysis)
+        else:
+            summary = summary_prelim
+
         logging.info(f"PubMed search took {time.time() - pubmed_start:.2f} seconds")
         logging.info(f"Fact check took {time.time() - fact_check_start:.2f} seconds")
         logging.info(f"Gemini analysis took {time.time() - gemini_start:.2f} seconds")
-
-        summary_start = time.time()
-        summary = summarize_with_deepseek(extracted_text, pubmed_results, fact_checks, gemini_analysis)
+        logging.info(f"Title generation took {time.time() - title_start:.2f} seconds")
         logging.info(f"DeepSeek summarization took {time.time() - summary_start:.2f} seconds")
 
         if not summary:
             summary = "No summary available due to processing error."
 
-        chat_title = generate_chat_title(extracted_text)
-
-        logging.info(f"Total request time: {time.time() - start_time:.2f} seconds")
-        return {
+        response = {
             "summary": summary,
             "sources": {
                 "pubmed": pubmed_results,
@@ -289,6 +319,13 @@ async def process_input(file: UploadFile = None, image_url: str = Form(None), te
             },
             "chat_title": chat_title
         }
+
+        if cache_key:
+            response_cache[cache_key] = response
+            logging.info(f"Cached response for key: {cache_key}")
+
+        logging.info(f"Total request time: {time.time() - start_time:.2f} seconds")
+        return response
     except HTTPException:
         raise
     except Exception as e:

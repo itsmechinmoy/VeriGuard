@@ -44,7 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function loadChat(index) {
     currentChatId = index;
     chatArea.innerHTML = "";
-    chatArea.appendChild(loadingSpinner); // Re-append spinner
+    chatArea.appendChild(loadingSpinner);
     const chat = chatHistory[index];
     const userMessage = document.createElement("div");
     userMessage.textContent = chat.extracted_text;
@@ -57,7 +57,7 @@ document.addEventListener("DOMContentLoaded", () => {
       chatArea.appendChild(reply);
     }
     branding.style.display = "none";
-    chatbox.style.display = "flex"; // Ensure chatbox is visible
+    chatbox.style.display = "flex";
     chatbox.classList.add("bottom");
     chatArea.scrollTop = chatArea.scrollHeight;
     chatInput.focus();
@@ -67,9 +67,9 @@ document.addEventListener("DOMContentLoaded", () => {
   askButton.addEventListener("click", () => {
     currentChatId = null;
     chatArea.innerHTML = "";
-    chatArea.appendChild(loadingSpinner); // Re-append spinner
+    chatArea.appendChild(loadingSpinner);
     branding.style.display = "flex";
-    chatbox.style.display = "flex"; // Ensure chatbox is visible
+    chatbox.style.display = "flex";
     chatbox.classList.remove("bottom");
     chatInput.value = "";
     fileUpload.value = "";
@@ -86,8 +86,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!chatInput.value.trim() && !fileUpload.files[0]) return;
 
     sendBtn.disabled = true;
-    chatbox.style.display = "none"; // Hide chatbox during processing
-    loadingSpinner.style.display = "block"; // Show spinner
+    chatbox.style.display = "none";
+    loadingSpinner.style.display = "block";
 
     const formData = new FormData();
     const inputText = chatInput.value.trim();
@@ -109,7 +109,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Display user input
     const userMessage = document.createElement("div");
     userMessage.textContent = inputText;
     userMessage.className = "chat-message user";
@@ -118,7 +117,10 @@ document.addEventListener("DOMContentLoaded", () => {
     chatArea.scrollTop = chatArea.scrollHeight;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+      console.error("Fetch aborted: Timeout after 10 seconds");
+    }, 10000);
 
     try {
       const response = await fetch("https://veriguard.onrender.com/process", {
@@ -157,7 +159,7 @@ document.addEventListener("DOMContentLoaded", () => {
       renderChatHistory();
       currentChatId = chatHistory.length - 1;
     } catch (error) {
-      console.error("Fetch error:", error);
+      console.error("Fetch error:", error.message, error.name);
       const reply = document.createElement("div");
       reply.textContent = `Error: ${error.message}`;
       reply.className = "chat-message reply";
@@ -165,7 +167,7 @@ document.addEventListener("DOMContentLoaded", () => {
       chatArea.scrollTop = chatArea.scrollHeight;
     } finally {
       sendBtn.disabled = false;
-      chatbox.style.display = "flex"; // Show chatbox after response
+      chatbox.style.display = "flex";
       chatbox.classList.add("bottom");
       loadingSpinner.style.display = "none";
       chatInput.value = "";
