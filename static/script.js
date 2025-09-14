@@ -94,9 +94,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       try {
         const response = await fetch(
-          "https://veriguard-backend.onrender.com/process",
+          "https://veriguard.onrender.com/process",  // Backend on Render
           {
-            // Update this URL
             method: "POST",
             body: formData,
           }
