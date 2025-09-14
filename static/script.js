@@ -52,7 +52,7 @@ document.addEventListener("DOMContentLoaded", () => {
     chatArea.appendChild(userMessage);
     if (chat.summary) {
       const reply = document.createElement("div");
-      reply.innerHTML = chat.summary;
+      reply.innerHTML = chat.summary.replace(/\n/g, "<br>");
       reply.className = "chat-message reply";
       chatArea.appendChild(reply);
     }
@@ -61,7 +61,11 @@ document.addEventListener("DOMContentLoaded", () => {
     chatbox.classList.add("bottom");
     chatArea.scrollTop = chatArea.scrollHeight;
     chatInput.focus();
-    history.pushState({ chat_id: chat.chat_id }, "", `/chat/${chat.chat_id}`);
+    try {
+      history.pushState({ chat_id: chat.chat_id }, "", `/chat/${chat.chat_id}`);
+    } catch (e) {
+      console.error("URL update error:", e);
+    }
   }
 
   // Handle URL routing
@@ -93,7 +97,11 @@ document.addEventListener("DOMContentLoaded", () => {
     chatInput.value = "";
     fileUpload.value = "";
     chatInput.focus();
-    history.replaceState({}, "", "/");
+    try {
+      history.replaceState({}, "", "/");
+    } catch (e) {
+      console.error("URL reset error:", e);
+    }
   }
 
   askButton.addEventListener("click", startNewChat);
@@ -141,8 +149,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       controller.abort();
-      console.error("Fetch aborted: Timeout after 10 seconds");
-    }, 10000);
+      console.error("Fetch aborted: Timeout after 15 seconds");
+    }, 15000);
 
     try {
       const response = await fetch("https://veriguard.onrender.com/process", {
@@ -162,7 +170,9 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log("Backend response:", data);
 
       const reply = document.createElement("div");
-      reply.innerHTML = data.summary || "Error: No summary provided by backend";
+      reply.innerHTML = (
+        data.summary || "Error: No summary provided by backend"
+      ).replace(/\n/g, "<br>");
       reply.className = `chat-message reply ${data.summary ? "" : "error"}`;
       chatArea.appendChild(reply);
       chatArea.scrollTop = chatArea.scrollHeight;
@@ -185,7 +195,15 @@ document.addEventListener("DOMContentLoaded", () => {
       localStorage.setItem("chatHistory", JSON.stringify(chatHistory));
       renderChatHistory();
       currentChatId = chat.chat_id;
-      history.pushState({ chat_id: chat.chat_id }, "", `/chat/${chat.chat_id}`);
+      try {
+        history.pushState(
+          { chat_id: chat.chat_id },
+          "",
+          `/chat/${chat.chat_id}`
+        );
+      } catch (e) {
+        console.error("URL update error:", e);
+      }
     } catch (error) {
       console.error("Fetch error:", error.name, error.message);
       const reply = document.createElement("div");
