@@ -11,11 +11,22 @@ document.addEventListener("DOMContentLoaded", () => {
   let chatHistory = JSON.parse(localStorage.getItem("chatHistory") || "[]");
   let currentChatId = null;
 
+  // Create loading spinner
+  const loadingSpinner = document.createElement("div");
+  loadingSpinner.className = "loading-spinner";
+  loadingSpinner.style.display = "none";
+  loadingSpinner.innerHTML = `
+    <svg class="spinner" viewBox="0 0 50 50">
+      <circle class="path" cx="25" cy="25" r="20" fill="none" stroke="#93C5FD" stroke-width="5"></circle>
+    </svg>
+  `;
+  chatArea.appendChild(loadingSpinner);
+
   // History is open by default
   sidebar.classList.add("expanded");
   chatList.classList.remove("hidden");
 
-  // Load chat history with nesting
+  // Load chat history
   function renderChatHistory() {
     chatList.innerHTML = "";
     chatHistory.forEach((chat, index) => {
@@ -32,29 +43,34 @@ document.addEventListener("DOMContentLoaded", () => {
   // Load a specific chat
   function loadChat(index) {
     currentChatId = index;
-    chatArea.innerHTML = ""; // Clear previous content
+    chatArea.innerHTML = "";
+    chatArea.appendChild(loadingSpinner); // Re-append spinner
     const chat = chatHistory[index];
     const userMessage = document.createElement("div");
-    userMessage.textContent = chat.extracted_text || inputText;
+    userMessage.textContent = chat.extracted_text;
     userMessage.className = "chat-message user";
     chatArea.appendChild(userMessage);
-    if (chat.grok_analysis) {
+    if (chat.summary) {
       const reply = document.createElement("div");
-      reply.textContent = chat.grok_analysis;
+      reply.innerHTML = chat.summary;
       reply.className = "chat-message reply";
       chatArea.appendChild(reply);
     }
-    branding.style.display = "none"; // Hide branding
-    chatbox.classList.add("bottom"); // Move chatbox to bottom
-    chatArea.scrollTop = chatArea.scrollHeight; // Scroll to bottom
+    branding.style.display = "none";
+    chatbox.style.display = "flex"; // Ensure chatbox is visible
+    chatbox.classList.add("bottom");
+    chatArea.scrollTop = chatArea.scrollHeight;
+    chatInput.focus();
   }
 
   // Create new chat
   askButton.addEventListener("click", () => {
     currentChatId = null;
     chatArea.innerHTML = "";
-    branding.style.display = "flex"; // Show branding for new chat
-    chatbox.classList.remove("bottom"); // Reset chatbox position
+    chatArea.appendChild(loadingSpinner); // Re-append spinner
+    branding.style.display = "flex";
+    chatbox.style.display = "flex"; // Ensure chatbox is visible
+    chatbox.classList.remove("bottom");
     chatInput.value = "";
     fileUpload.value = "";
     chatInput.focus();
@@ -67,7 +83,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Handle form submission
   sendBtn.addEventListener("click", async () => {
+    if (!chatInput.value.trim() && !fileUpload.files[0]) return;
+
     sendBtn.disabled = true;
+    chatbox.style.display = "none"; // Hide chatbox during processing
+    loadingSpinner.style.display = "block"; // Show spinner
 
     const formData = new FormData();
     const inputText = chatInput.value.trim();
@@ -84,6 +104,8 @@ document.addEventListener("DOMContentLoaded", () => {
       formData.append("text", inputText);
     } else {
       sendBtn.disabled = false;
+      chatbox.style.display = "flex";
+      loadingSpinner.style.display = "none";
       return;
     }
 
@@ -92,38 +114,30 @@ document.addEventListener("DOMContentLoaded", () => {
     userMessage.textContent = inputText;
     userMessage.className = "chat-message user";
     chatArea.appendChild(userMessage);
-    branding.style.display = "none"; // Hide branding after input
-    chatbox.classList.add("bottom"); // Move chatbox to bottom after query
-    chatArea.scrollTop = chatArea.scrollHeight; // Scroll to bottom
+    branding.style.display = "none";
+    chatArea.scrollTop = chatArea.scrollHeight;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30-second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     try {
-      const response = await fetch(
-        "https://veriguard.onrender.com/process", // Backend on Render
-        {
-          method: "POST",
-          body: formData,
-          signal: controller.signal,
-        }
-      );
+      const response = await fetch("https://veriguard.onrender.com/process", {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      });
       clearTimeout(timeoutId);
-      if (!response.ok) {
-        throw new Error("Request failed");
-      }
+      if (!response.ok)
+        throw new Error(`HTTP error! status: ${response.status}`);
+
       const data = await response.json();
-      console.log("Backend response:", data); // Debug response
+      console.log("Backend response:", data);
 
       const reply = document.createElement("div");
-      if (!data.summary) {
-        reply.textContent = "Error: No summary provided by backend";
-      } else {
-        reply.innerHTML = data.summary; // Render formatted summary with links
-      }
+      reply.innerHTML = data.summary || "Error: No summary provided by backend";
       reply.className = "chat-message reply";
       chatArea.appendChild(reply);
-      chatArea.scrollTop = chatArea.scrollHeight; // Scroll to bottom
+      chatArea.scrollTop = chatArea.scrollHeight;
 
       const chat = {
         timestamp: new Date().toLocaleString("en-US", {
@@ -132,28 +146,31 @@ document.addEventListener("DOMContentLoaded", () => {
           minute: "2-digit",
           timeZone: "Asia/Kolkata",
         }),
-        title: `Chat ${chatHistory.length + 1}`,
-        extracted_text: data.extracted_text || inputText,
+        title: data.chat_title || `Chat ${chatHistory.length + 1}`,
+        extracted_text: inputText,
+        summary: data.summary,
         pubmed_results: data.sources.pubmed || [],
         fact_checks: data.sources.fact_checks || [],
-        grok_analysis: "", // Removed as we're using summary
-        chatgpt_analysis: "", // Removed
       };
       chatHistory.push(chat);
       localStorage.setItem("chatHistory", JSON.stringify(chatHistory));
       renderChatHistory();
-      loadChat(chatHistory.length - 1);
+      currentChatId = chatHistory.length - 1;
     } catch (error) {
       console.error("Fetch error:", error);
       const reply = document.createElement("div");
       reply.textContent = `Error: ${error.message}`;
       reply.className = "chat-message reply";
       chatArea.appendChild(reply);
-      chatArea.scrollTop = chatArea.scrollHeight; // Scroll to bottom
+      chatArea.scrollTop = chatArea.scrollHeight;
     } finally {
       sendBtn.disabled = false;
+      chatbox.style.display = "flex"; // Show chatbox after response
+      chatbox.classList.add("bottom");
+      loadingSpinner.style.display = "none";
       chatInput.value = "";
       fileUpload.value = "";
+      chatInput.focus();
     }
   });
 
