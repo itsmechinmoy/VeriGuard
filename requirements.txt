@@ -2,7 +2,6 @@ fastapi==0.115.0
 uvicorn==0.30.6
 requests==2.32.3
 python-dotenv==1.0.1
-google-generativeai==0.8.3  # For Gemini OCR and analysis
-openai==1.51.0  # For DeepSeek summarization via OpenRouter
-Pillow==10.4.0  # For image handling in AI OCR
-python-multipart==0.0.9  # Added for form data handling
+google-generativeai==0.8.3
+Pillow==10.4.0
+python-multipart==0.0.9
