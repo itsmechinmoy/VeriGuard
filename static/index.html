@@ -7,7 +7,7 @@
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="index.css">
     <link rel="icon" href="icon-192.png" type="image/png">
-    <title>VeriGuard</title>
+    <title>VeriGuard - Medical Information Verification</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
@@ -30,20 +30,21 @@
                 <h1 class="app-name">VeriGuard</h1>
             </div>
             <div class="chat-area" id="chat-area">
-                <div class="chatbox">
-                    <label for="file-upload" class="upload-icon">
-                        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
-                        </svg>
-                    </label>
-                    <input type="file" id="file-upload" accept="image/*" class="hidden">
-                    <input type="text" id="chat-input" placeholder="Ask your medical queries&#10;and get verified answers" class="chat-input">
-                    <button id="send-btn">
-                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path>
-                        </svg>
-                    </button>
-                </div>
+                <!-- Messages will be dynamically inserted here -->
+            </div>
+            <div class="chatbox">
+                <label for="file-upload" class="upload-icon">
+                    <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                    </svg>
+                </label>
+                <input type="file" id="file-upload" accept="image/*" style="display: none;">
+                <input type="text" id="chat-input" placeholder="Ask your medical queries&#10;and get verified answers" class="chat-input">
+                <button id="send-btn">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m5 12 5 5L20 7"></path>
+                    </svg>
+                </button>
             </div>
         </div>
     </div>
