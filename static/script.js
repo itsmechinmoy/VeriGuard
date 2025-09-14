@@ -33,11 +33,20 @@ document.addEventListener("DOMContentLoaded", () => {
     chatHistory.forEach((chat, index) => {
       const chatItem = document.createElement("div");
       chatItem.className = "chat-item-nested";
-      chatItem.textContent = `${chat.timestamp} - ${
+      chatItem.innerHTML = `${chat.timestamp} - ${
         chat.title || `Chat ${index + 1}`
-      }`;
+      }<span class="delete-icon" data-index="${index}">&times;</span>`;
       chatItem.onclick = () => loadChat(index);
       chatList.appendChild(chatItem);
+    });
+    document.querySelectorAll(".delete-icon").forEach((icon) => {
+      icon.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const index = parseInt(icon.getAttribute("data-index"));
+        chatHistory.splice(index, 1);
+        localStorage.setItem("chatHistory", JSON.stringify(chatHistory));
+        renderChatHistory();
+      });
     });
   }
 
@@ -103,7 +112,7 @@ document.addEventListener("DOMContentLoaded", () => {
     chatArea.innerHTML = "";
     chatArea.appendChild(loadingSpinner);
     branding.style.display = "flex";
-    chatbox.style.display = "flex";
+    chatbox.style.display = "flex"; // Ensure chatbox is visible
     chatbox.classList.remove("bottom");
     chatInput.value = "";
     fileUpload.value = "";
