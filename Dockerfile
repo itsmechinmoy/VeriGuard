@@ -8,13 +8,15 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code and entrypoint script
 COPY . .
+
+# Make entrypoint script executable
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1
 
-# Use entrypoint script for port handling
-COPY entrypoint.sh .
-RUN chmod +x entrypoint.sh
+# Use entrypoint script
 ENTRYPOINT ["./entrypoint.sh"]

@@ -5,8 +5,8 @@ import requests
 from PIL import Image
 import io
 from dotenv import load_dotenv
-import google.generativeai as genai  # For Gemini
-from openai import OpenAI  # For DeepSeek via OpenRouter compatibility
+import google.generativeai as genai  # For Gemini OCR and analysis
+from openai import OpenAI  # For DeepSeek summarization via OpenRouter
 
 load_dotenv()
 
@@ -23,21 +23,30 @@ app.add_middleware(
 
 # API Keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-DEEPSEEK_API_KEY = os.getenv("OPENAI_API_KEY")  # Aligned with OpenRouter's expectation
+DEEPSEEK_API_KEY = os.getenv("OPENAI_API_KEY")  # Aligned with OpenRouter
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# Initialize clients
+# Initialize Gemini
 genai.configure(api_key=GEMINI_API_KEY)
-# Use OpenAI client for DeepSeek via OpenRouter, explicitly named for clarity
-deepseek_router_client = OpenAI(
-    api_key=DEEPSEEK_API_KEY,
-    base_url="https://openrouter.ai/api/v1"
-)
 
-def extract_text_from_image(image_file):
-    """OCR using Tesseract (from src/ocr_processor.py)"""
-    from src.ocr_processor import extract_text_from_image as ocr_extract
-    return ocr_extract(image_file)
+def perform_ai_ocr(image_file):
+    """Gemini for OCR (free tier)."""
+    if not GEMINI_API_KEY:
+        return "Gemini API key not set."
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Read image from file
+        if hasattr(image_file, 'read'):
+            image_data = image_file.read()
+            image = Image.open(io.BytesIO(image_data))
+        else:
+            image = image_file
+        # Prompt for OCR
+        prompt = "Extract all text from this image accurately, especially health advice or handwritten notes. Output only the extracted text."
+        response = model.generate_content([prompt, image])
+        return response.text.strip()
+    except Exception as e:
+        return f"OCR Error: {str(e)}"
 
 def search_pubmed(query):
     """Free PubMed search via NCBI EUtils."""
@@ -103,9 +112,14 @@ def analyze_with_gemini(text):
 
 def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
     """DeepSeek (via OpenRouter) to rewrite into concise response."""
-    if not DEEPSEEK_API_KEY:
+    deepseek_api_key = os.getenv("OPENAI_API_KEY")
+    if not deepseek_api_key:
         return "DeepSeek API key not set."
     try:
+        deepseek_router_client = OpenAI(
+            api_key=deepseek_api_key,
+            base_url="https://openrouter.ai/api/v1"
+        )
         prompt = f"""
         Summarize the following medical advice into a short, concise response. Use bullet points, include links to sources, and flag any misinformation.
         Original text: {text}
@@ -127,15 +141,15 @@ def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
 @app.post("/process")
 async def process_input(file: UploadFile = None, image_url: str = Form(None), text: str = Form(None)):
     try:
-        # OCR or text extraction
+        # AI OCR or text extraction
         if file:
-            extracted_text = extract_text_from_image(file.file)
+            extracted_text = perform_ai_ocr(file.file)
         elif image_url:
             response = requests.get(image_url, stream=True, timeout=10)
             if response.status_code != 200:
                 raise HTTPException(400, detail="Failed to load image from URL")
             image = Image.open(io.BytesIO(response.content))
-            extracted_text = extract_text_from_image(image)
+            extracted_text = perform_ai_ocr(image)
         else:
             extracted_text = text.strip() if text else ""
         if not extracted_text:

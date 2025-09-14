@@ -4,3 +4,4 @@ requests==2.32.3
 python-dotenv==1.0.1
 google-generativeai==0.8.3  # For Gemini OCR and analysis
 openai==1.51.0  # For DeepSeek summarization via OpenRouter
+Pillow==10.4.0  # Keep for image handling in AI OCR
