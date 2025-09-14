@@ -1,8 +1,8 @@
 const CACHE_NAME = "veriguard-cache-v1";
 const urlsToCache = [
   "/",
-  "/static/index.html",
-  "/static/script.js",
+  "index.html",
+  "script.js",
   "https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css",
 ];
 
