@@ -7,6 +7,8 @@ import io
 from dotenv import load_dotenv
 import google.generativeai as genai  # For Gemini OCR and analysis
 from openai import OpenAI  # For DeepSeek summarization via OpenRouter
+import time
+import logging
 
 load_dotenv()
 
@@ -20,6 +22,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
 
 # API Keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -50,7 +55,7 @@ def search_pubmed(query):
     """Free PubMed search via NCBI EUtils."""
     try:
         esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-        params = {"db": "pubmed", "term": query, "retmax": 3, "retmode": "json"}
+        params = {"db": "pubmed", "term": query, "retmax": 1, "retmode": "json"}  # Reduced to 1 for speed
         response = requests.get(esearch_url, params=params, timeout=10)
         data = response.json()
         ids = data.get("esearchresult", {}).get("idlist", [])
@@ -132,8 +137,8 @@ def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
             temperature=0.1  # Low temperature to reduce hallucination
         )
         return response.choices[0].message.content.strip()
-    except:
-        return "Summarization unavailable."
+    except Exception as e:
+        return f"Error in summarization: {str(e)}"
 
 # Add a root endpoint for health check
 @app.get("/")
@@ -147,6 +152,8 @@ async def head_root():
 
 @app.post("/process")
 async def process_input(file: UploadFile = None, image_url: str = Form(None), text: str = Form(None)):
+    start_time = time.time()
+    logging.info("Starting /process request")
     try:
         # AI OCR or text extraction
         if file:
@@ -159,19 +166,33 @@ async def process_input(file: UploadFile = None, image_url: str = Form(None), te
             extracted_text = perform_ai_ocr(image)
         else:
             extracted_text = text.strip() if text else ""
+        logging.info(f"Text extraction took {time.time() - start_time:.2f} seconds")
         if not extracted_text:
             raise HTTPException(400, detail="No text extracted or provided")
 
         # Fact-checking
+        pubmed_start = time.time()
         pubmed_results = search_pubmed(extracted_text.replace(" ", "+"))
+        logging.info(f"PubMed search took {time.time() - pubmed_start:.2f} seconds")
+
+        fact_check_start = time.time()
         fact_checks = search_fact_check(extracted_text)
+        logging.info(f"Fact check took {time.time() - fact_check_start:.2f} seconds")
 
         # AI analysis
+        gemini_start = time.time()
         gemini_analysis = analyze_with_gemini(extracted_text)
+        logging.info(f"Gemini analysis took {time.time() - gemini_start:.2f} seconds")
 
         # Summarize
+        summary_start = time.time()
         summary = summarize_with_deepseek(extracted_text, pubmed_results, fact_checks, gemini_analysis)
+        logging.info(f"DeepSeek summarization took {time.time() - summary_start:.2f} seconds")
 
+        if not summary:
+            summary = "No summary available due to processing error."
+
+        logging.info(f"Total request time: {time.time() - start_time:.2f} seconds")
         return {
             "summary": summary,
             "sources": {
@@ -182,4 +203,5 @@ async def process_input(file: UploadFile = None, image_url: str = Form(None), te
     except HTTPException:
         raise
     except Exception as e:
+        logging.error(f"Error in /process: {str(e)}")
         raise HTTPException(500, detail=str(e))
