@@ -23,7 +23,6 @@ app.add_middleware(
 
 # API Keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-DEEPSEEK_API_KEY = os.getenv("OPENAI_API_KEY")  # Aligned with OpenRouter
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # Initialize Gemini
@@ -35,13 +34,11 @@ def perform_ai_ocr(image_file):
         return "Gemini API key not set."
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
-        # Read image from file
         if hasattr(image_file, 'read'):
             image_data = image_file.read()
             image = Image.open(io.BytesIO(image_data))
         else:
             image = image_file
-        # Prompt for OCR
         prompt = "Extract all text from this image accurately, especially health advice or handwritten notes. Output only the extracted text."
         response = model.generate_content([prompt, image])
         return response.text.strip()
@@ -137,6 +134,11 @@ def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
         return response.choices[0].message.content.strip()
     except:
         return "Summarization unavailable."
+
+# Add a root endpoint for health check
+@app.get("/")
+async def root():
+    return {"message": "VeriGuard Backend is running. Use /process for health advice analysis."}
 
 @app.post("/process")
 async def process_input(file: UploadFile = None, image_url: str = Form(None), text: str = Form(None)):
