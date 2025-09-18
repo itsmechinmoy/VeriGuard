@@ -65,10 +65,34 @@ def correct_medical_term(term):
             return correct_term
     return term
 
+def is_medical_query(text):
+    """Check if the text is actually a medical query."""
+    medical_keywords = [
+        'pain', 'ache', 'hurt', 'sick', 'fever', 'cough', 'nausea', 'dizzy', 'bleeding',
+        'infection', 'swelling', 'rash', 'symptom', 'disease', 'condition', 'medical',
+        'doctor', 'hospital', 'medicine', 'treatment', 'cure', 'heal', 'injury',
+        'broken', 'cut', 'wound', 'burn', 'bite', 'sting', 'allergy', 'asthma'
+    ]
+    greeting_keywords = ['hi', 'hello', 'hey', 'what are you', 'who are you', 'about', 'help']
+    
+    text_lower = text.lower().strip()
+    
+    # Check if it's a greeting or general question about the service
+    if any(keyword in text_lower for keyword in greeting_keywords):
+        return False
+    
+    # Check if it contains medical keywords
+    return any(keyword in text_lower for keyword in medical_keywords)
+
 def extract_query(text):
     """Extract key medical term using Gemini, with typo correction and fallback."""
     text = text.lower().strip()
     logging.info(f"Extracting query from text: {text}")
+    
+    # If not a medical query, return the original text
+    if not is_medical_query(text):
+        return text
+    
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"Extract the main health symptom from: '{text}'. Return only the symptom (e.g., 'fever')."
@@ -194,10 +218,11 @@ def analyze_with_gemini(text):
         return "Analysis unavailable"
 
 async def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
-    """DeepSeek for concise medical summary."""
+    """DeepSeek for concise medical summary or service introduction."""
     if not DEEPSEEK_API_KEY:
         logging.error("DeepSeek API key not set")
         return "Summary unavailable"
+    
     try:
         headers = {
             "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
@@ -206,31 +231,50 @@ async def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
             "X-Title": "VeriGuard"
         }
         
-        # Create concise prompt focused on practical advice
-        fact_check_info = ""
-        if fact_checks:
-            fact_check_info = f" Note: Some claims about {extract_query(text)} may be misleading."
-        
-        pubmed_info = ""
-        if pubmed:
-            pubmed_info = f" Medical research available at: {pubmed[0]['url'] if pubmed else ''}"
-        
-        prompt = f"""
-        User asked about: {text}
+        # Check if this is a general inquiry about the service
+        if not is_medical_query(text):
+            prompt = f"""
+            The user asked: {text}
+            
+            Respond as VeriGuard - a medical fact-checking AI assistant. Introduce yourself as:
+            "I'm VeriGuard, a MediFact Checker - An AI tool for verifying health misinformation and helping with health queries. 
+            
+            I can help you:
+            • Verify medical claims and detect misinformation
+            • Provide evidence-based health guidance
+            • Answer questions about symptoms and treatments
+            • Find reliable medical sources
+            
+            Ask me about any health concern and I'll provide verified information!"
+            
+            Keep it friendly and under 100 words.
+            """
+        else:
+            # Create concise prompt focused on practical medical advice
+            fact_check_info = ""
+            if fact_checks:
+                fact_check_info = f" Note: Some claims about {extract_query(text)} may be misleading."
+            
+            pubmed_info = ""
+            if pubmed:
+                pubmed_info = f" Medical research available at: {pubmed[0]['url'] if pubmed else ''}"
+            
+            prompt = f"""
+            User asked about: {text}
 
-        Provide ONLY immediate practical advice in bullet points:
-        - What to do right now (2-3 simple steps)
-        - When to seek medical help (warning signs)
-        
-        Keep under 80 words. Be direct and helpful.{fact_check_info}{pubmed_info}
-        
-        Based on: {gemini_analysis}
-        """
+            Provide ONLY immediate practical advice in bullet points:
+            - What to do right now (2-3 simple steps)
+            - When to seek medical help (warning signs)
+            
+            Keep under 80 words. Be direct and helpful.{fact_check_info}{pubmed_info}
+            
+            Based on: {gemini_analysis}
+            """
         
         payload = {
             "model": "deepseek/deepseek-chat",
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 120,
+            "max_tokens": 150,
             "temperature": 0.1
         }
         
@@ -247,23 +291,47 @@ async def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
                 return data["choices"][0]["message"]["content"].strip()
     except Exception as e:
         logging.error(f"DeepSeek error: {str(e)}")
+        # Fallback for non-medical queries
+        if not is_medical_query(text):
+            return "I'm VeriGuard, a MediFact Checker - An AI tool for verifying health misinformation and helping with health queries. Ask me about any health concern!"
         return f"Summary unavailable: {str(e)}"
 
 def generate_chat_title(text):
-    """Generate a concise chat title using Gemini."""
+    """Generate a natural chat title like other AI assistants."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
-        prompt = f"Create a 3-5 word title for this health query: '{text}'. Format: 'Issues with [symptom]'"
+        prompt = f"Create a natural 2-4 word title for this query: '{text}'. Examples: 'Headache relief', 'Fever treatment', 'Back pain help'. Don't use 'Issues with'."
         response = model.generate_content(prompt)
-        title = response.text.strip()
+        title = response.text.strip().strip('"').strip("'")
         logging.info(f"Generated chat title: {title}")
         return title
     except Exception as e:
         logging.error(f"Gemini title generation error: {str(e)}")
-        query = extract_query(text)
-        title = f"Issues with {query}"
-        logging.info(f"Fallback chat title: {title}")
-        return title
+        # Fallback to natural title generation
+        words = text.lower().strip().split()
+        if not words:
+            return "New Chat"
+        
+        # Common medical terms and their natural titles
+        medical_mappings = {
+            'headache': 'Headache relief',
+            'fever': 'Fever treatment', 
+            'cough': 'Cough remedy',
+            'pain': 'Pain management',
+            'nausea': 'Nausea help',
+            'diarrhea': 'Stomach issues',
+            'fatigue': 'Fatigue concerns',
+            'dizzy': 'Dizziness help'
+        }
+        
+        for word in words:
+            if word in medical_mappings:
+                return medical_mappings[word]
+        
+        # Generic fallback - take first 3 meaningful words
+        meaningful_words = [w for w in words if len(w) > 2 and w not in ['the', 'and', 'but', 'for', 'are', 'with', 'can', 'you', 'have']]
+        title = ' '.join(meaningful_words[:3])
+        return title.capitalize() if title else "New Chat"
 
 @app.get("/")
 async def root():

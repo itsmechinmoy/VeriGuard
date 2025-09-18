@@ -64,13 +64,17 @@ document.addEventListener("DOMContentLoaded", () => {
     // Hide branding
     if (branding) branding.style.display = "none";
 
+    // Add conversation mode class to main content
+    const mainContent = document.querySelector(".main-content");
+    if (mainContent) mainContent.classList.add("conversation-mode");
+
     // Move chatbox to bottom
     if (chatbox) {
       chatbox.classList.add("bottom");
     }
   }
 
-  // Load chat history and render
+  // Load chat history and render with date grouping
   function renderChatHistory() {
     console.log("Rendering chat history:", chatHistory);
     if (!chatList) return;
@@ -87,48 +91,73 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    // Group chats by date
+    const groupedChats = {};
     chatHistory.forEach((chat, index) => {
-      const chatItem = document.createElement("div");
-      chatItem.className = "chat-item-nested";
+      const date = new Date(chat.created_at || Date.now()).toLocaleDateString(
+        "en-US",
+        {
+          month: "short",
+          day: "2-digit",
+        }
+      );
+      if (!groupedChats[date]) {
+        groupedChats[date] = [];
+      }
+      groupedChats[date].push({ ...chat, originalIndex: index });
+    });
 
-      // Create chat title and delete button
-      const chatTitle = document.createElement("span");
-      chatTitle.textContent = `${chat.timestamp} - ${
-        chat.title || `Chat ${index + 1}`
-      }`;
-      chatTitle.style.flex = "1";
-      chatTitle.style.overflow = "hidden";
-      chatTitle.style.textOverflow = "ellipsis";
-      chatTitle.style.whiteSpace = "nowrap";
+    // Render grouped chats
+    Object.entries(groupedChats).forEach(([date, chats]) => {
+      // Date header
+      const dateHeader = document.createElement("div");
+      dateHeader.style.color = "#9CA3AF";
+      dateHeader.style.fontSize = "0.75rem";
+      dateHeader.style.fontWeight = "bold";
+      dateHeader.style.padding = "0.5rem 0.75rem";
+      dateHeader.style.marginTop = "0.5rem";
+      dateHeader.textContent = date;
+      chatList.appendChild(dateHeader);
 
-      const deleteIcon = document.createElement("span");
-      deleteIcon.className = "delete-icon";
-      deleteIcon.innerHTML = "&times;";
-      deleteIcon.setAttribute("data-index", index);
-      deleteIcon.style.marginLeft = "0.5rem";
-      deleteIcon.style.cursor = "pointer";
-      deleteIcon.style.color = "#dc2626";
-      deleteIcon.style.fontSize = "1.2rem";
+      // Chats for this date
+      chats.forEach((chat) => {
+        const chatItem = document.createElement("div");
+        chatItem.className = "chat-item-nested";
 
-      // Add hover effect
-      deleteIcon.addEventListener("mouseenter", () => {
-        deleteIcon.style.color = "#ef4444";
-      });
-      deleteIcon.addEventListener("mouseleave", () => {
+        const chatTitle = document.createElement("span");
+        chatTitle.textContent = chat.title || `Chat ${chat.originalIndex + 1}`;
+        chatTitle.style.flex = "1";
+        chatTitle.style.overflow = "hidden";
+        chatTitle.style.textOverflow = "ellipsis";
+        chatTitle.style.whiteSpace = "nowrap";
+
+        const deleteIcon = document.createElement("span");
+        deleteIcon.className = "delete-icon";
+        deleteIcon.innerHTML = "&times;";
+        deleteIcon.setAttribute("data-index", chat.originalIndex);
+        deleteIcon.style.marginLeft = "0.5rem";
+        deleteIcon.style.cursor = "pointer";
         deleteIcon.style.color = "#dc2626";
+        deleteIcon.style.fontSize = "1.2rem";
+
+        deleteIcon.addEventListener("mouseenter", () => {
+          deleteIcon.style.color = "#ef4444";
+        });
+        deleteIcon.addEventListener("mouseleave", () => {
+          deleteIcon.style.color = "#dc2626";
+        });
+
+        chatItem.appendChild(chatTitle);
+        chatItem.appendChild(deleteIcon);
+
+        chatTitle.addEventListener("click", () => loadChat(chat.originalIndex));
+        deleteIcon.addEventListener("click", (e) => {
+          e.stopPropagation();
+          deleteChat(chat.originalIndex);
+        });
+
+        chatList.appendChild(chatItem);
       });
-
-      chatItem.appendChild(chatTitle);
-      chatItem.appendChild(deleteIcon);
-
-      // Click handlers
-      chatTitle.addEventListener("click", () => loadChat(index));
-      deleteIcon.addEventListener("click", (e) => {
-        e.stopPropagation();
-        deleteChat(index);
-      });
-
-      chatList.appendChild(chatItem);
     });
   }
 
@@ -150,7 +179,50 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Load a specific chat
+  // Generate better chat titles (like other AI assistants)
+  function generateChatTitle(text) {
+    if (!text || text.trim().length === 0) return "New Chat";
+
+    const words = text.trim().split(" ");
+    if (words.length <= 3) {
+      return text.trim();
+    }
+
+    // Take first 3-4 meaningful words
+    const meaningfulWords = words.filter(
+      (word) =>
+        word.length > 2 &&
+        ![
+          "the",
+          "and",
+          "but",
+          "for",
+          "are",
+          "with",
+          "can",
+          "you",
+          "have",
+          "this",
+          "that",
+          "will",
+          "from",
+          "they",
+          "been",
+          "said",
+          "each",
+          "which",
+          "what",
+          "where",
+          "when",
+          "why",
+          "how",
+        ].includes(word.toLowerCase())
+    );
+
+    return meaningfulWords.slice(0, 4).join(" ");
+  }
+
+  // Load a specific chat with all messages
   function loadChat(index) {
     if (index < 0 || index >= chatHistory.length) {
       console.error("Invalid chat index:", index);
@@ -168,49 +240,82 @@ document.addEventListener("DOMContentLoaded", () => {
     chatArea.innerHTML = "";
     chatArea.appendChild(loadingSpinner);
 
-    // Create user message container
-    const userMessageContainer = document.createElement("div");
-    userMessageContainer.style.marginBottom = "1rem";
+    // Load all messages if available, otherwise use legacy format
+    if (chat.messages && chat.messages.length > 0) {
+      chat.messages.forEach((message) => {
+        const messageContainer = document.createElement("div");
+        messageContainer.style.marginBottom = "1rem";
 
-    const userLabel = document.createElement("div");
-    userLabel.textContent = "You:";
-    userLabel.style.fontWeight = "bold";
-    userLabel.style.color = "#E5E7EB";
-    userLabel.style.marginBottom = "0.25rem";
-    userLabel.style.fontSize = "0.9rem";
+        const messageLabel = document.createElement("div");
+        messageLabel.textContent =
+          message.type === "user" ? "You:" : "VeriGuard:";
+        messageLabel.style.fontWeight = "bold";
+        messageLabel.style.color = "#E5E7EB";
+        messageLabel.style.marginBottom = "0.25rem";
+        messageLabel.style.fontSize = "0.9rem";
 
-    const userMessage = document.createElement("div");
-    userMessage.textContent = chat.extracted_text || "No query provided";
-    userMessage.className = "chat-message user";
+        const messageContent = document.createElement("div");
+        if (message.type === "assistant") {
+          try {
+            messageContent.innerHTML = marked.parse(message.content);
+          } catch (e) {
+            console.error("Markdown parsing error:", e);
+            messageContent.textContent = message.content;
+          }
+          messageContent.className = "chat-message reply";
+        } else {
+          messageContent.textContent = message.content;
+          messageContent.className = "chat-message user";
+        }
 
-    userMessageContainer.appendChild(userLabel);
-    userMessageContainer.appendChild(userMessage);
-    chatArea.appendChild(userMessageContainer);
+        messageContainer.appendChild(messageLabel);
+        messageContainer.appendChild(messageContent);
+        chatArea.appendChild(messageContainer);
+      });
+    } else {
+      // Legacy format - single message pair
+      const userMessageContainer = document.createElement("div");
+      userMessageContainer.style.marginBottom = "1rem";
 
-    // Create reply container if summary exists
-    if (chat.summary) {
-      const replyContainer = document.createElement("div");
-      replyContainer.style.marginBottom = "1rem";
+      const userLabel = document.createElement("div");
+      userLabel.textContent = "You:";
+      userLabel.style.fontWeight = "bold";
+      userLabel.style.color = "#E5E7EB";
+      userLabel.style.marginBottom = "0.25rem";
+      userLabel.style.fontSize = "0.9rem";
 
-      const replyLabel = document.createElement("div");
-      replyLabel.textContent = "VeriGuard:";
-      replyLabel.style.fontWeight = "bold";
-      replyLabel.style.color = "#E5E7EB";
-      replyLabel.style.marginBottom = "0.25rem";
-      replyLabel.style.fontSize = "0.9rem";
+      const userMessage = document.createElement("div");
+      userMessage.textContent = chat.extracted_text || "No query provided";
+      userMessage.className = "chat-message user";
 
-      const reply = document.createElement("div");
-      try {
-        reply.innerHTML = marked.parse(chat.summary);
-      } catch (e) {
-        console.error("Markdown parsing error:", e);
-        reply.textContent = chat.summary;
+      userMessageContainer.appendChild(userLabel);
+      userMessageContainer.appendChild(userMessage);
+      chatArea.appendChild(userMessageContainer);
+
+      if (chat.summary) {
+        const replyContainer = document.createElement("div");
+        replyContainer.style.marginBottom = "1rem";
+
+        const replyLabel = document.createElement("div");
+        replyLabel.textContent = "VeriGuard:";
+        replyLabel.style.fontWeight = "bold";
+        replyLabel.style.color = "#E5E7EB";
+        replyLabel.style.marginBottom = "0.25rem";
+        replyLabel.style.fontSize = "0.9rem";
+
+        const reply = document.createElement("div");
+        try {
+          reply.innerHTML = marked.parse(chat.summary);
+        } catch (e) {
+          console.error("Markdown parsing error:", e);
+          reply.textContent = chat.summary;
+        }
+        reply.className = "chat-message reply";
+
+        replyContainer.appendChild(replyLabel);
+        replyContainer.appendChild(reply);
+        chatArea.appendChild(replyContainer);
       }
-      reply.className = "chat-message reply";
-
-      replyContainer.appendChild(replyLabel);
-      replyContainer.appendChild(reply);
-      chatArea.appendChild(replyContainer);
     }
 
     // Scroll to bottom
@@ -266,6 +371,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Initialize centered interface
     initializeChatInterface();
+
+    // Remove conversation mode from main content
+    const mainContent = document.querySelector(".main-content");
+    if (mainContent) mainContent.classList.remove("conversation-mode");
 
     // Clear inputs
     if (chatInput) {
@@ -405,31 +514,73 @@ document.addEventListener("DOMContentLoaded", () => {
         chatArea.appendChild(replyContainer);
         chatArea.scrollTop = chatArea.scrollHeight;
 
-        // Save chat to history
-        const chat = {
+        // Save or update chat in history
+        let existingChatIndex = -1;
+        if (currentChatId) {
+          existingChatIndex = chatHistory.findIndex(
+            (chat) => chat.chat_id === currentChatId
+          );
+        }
+
+        const chatData = {
           chat_id:
+            currentChatId ||
             data.chat_id ||
             `chat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          timestamp: new Date().toLocaleString("en-US", {
-            hour12: true,
-            hour: "2-digit",
-            minute: "2-digit",
-            month: "short",
-            day: "2-digit",
-            timeZone: "Asia/Kolkata",
-          }),
+          created_at:
+            existingChatIndex >= 0
+              ? chatHistory[existingChatIndex].created_at
+              : Date.now(),
+          updated_at: Date.now(),
           title:
             data.chat_title ||
-            `Issues with ${
-              inputText?.split(" ").slice(0, 3).join(" ") || "query"
-            }`,
+            (existingChatIndex >= 0
+              ? chatHistory[existingChatIndex].title
+              : generateChatTitle(inputText)),
+          messages:
+            existingChatIndex >= 0
+              ? [
+                  ...chatHistory[existingChatIndex].messages,
+                  {
+                    type: "user",
+                    content: inputText || "Image input",
+                    timestamp: Date.now(),
+                  },
+                  {
+                    type: "assistant",
+                    content: data.summary,
+                    timestamp: Date.now(),
+                  },
+                ]
+              : [
+                  {
+                    type: "user",
+                    content: inputText || "Image input",
+                    timestamp: Date.now(),
+                  },
+                  {
+                    type: "assistant",
+                    content: data.summary,
+                    timestamp: Date.now(),
+                  },
+                ],
+          // Legacy fields for compatibility
           extracted_text: inputText || "Image input",
           summary: data.summary,
           pubmed_results: data.sources?.pubmed || [],
           fact_checks: data.sources?.fact_checks || [],
         };
 
-        chatHistory.unshift(chat); // Add to beginning of array
+        if (existingChatIndex >= 0) {
+          // Update existing chat
+          chatHistory[existingChatIndex] = chatData;
+          // Move to front
+          chatHistory.unshift(chatHistory.splice(existingChatIndex, 1)[0]);
+        } else {
+          // Add new chat to front
+          chatHistory.unshift(chatData);
+          currentChatId = chatData.chat_id;
+        }
 
         try {
           sessionStorage.setItem("chatHistory", JSON.stringify(chatHistory));
@@ -438,10 +589,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         renderChatHistory();
-        currentChatId = chat.chat_id;
 
         // Update URL with chat ID
-        updateURL(`/chat/${chat.chat_id}`);
+        updateURL(`/chat/${chatData.chat_id}`);
       } catch (error) {
         console.error("Request error:", error);
 

@@ -85,6 +85,29 @@ body {
     max-height: calc(100vh - 150px);
 }
 
+/* Hide scrollbar in chat list */
+.chat-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.chat-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.chat-list::-webkit-scrollbar-thumb {
+    background: #374151;
+    border-radius: 2px;
+}
+
+.chat-list::-webkit-scrollbar-thumb:hover {
+    background: #4B5563;
+}
+
+/* For Firefox */
+.chat-list {
+    scrollbar-width: none; /* Hide scrollbar completely */
+}
+
 .chat-item-nested {
     padding: 0.75rem;
     border-radius: 0.375rem;
@@ -141,9 +164,34 @@ body {
     justify-content: center;
     align-items: center;
     padding: 2rem 1rem 1rem;
-    overflow-y: auto;
+    overflow-y: hidden; /* Prevent main content from scrolling */
     background-color: #161719;
     position: relative;
+    height: 100vh;
+}
+
+.main-content.conversation-mode {
+    justify-content: flex-start;
+    padding-top: 1rem;
+}
+
+/* Ensure proper centering for new chat mode */
+.main-content:not(.conversation-mode) .chat-area {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+}
+
+.main-content:not(.conversation-mode) .chatbox {
+    position: static !important;
+    transform: none !important;
+    left: auto !important;
+    bottom: auto !important;
+    margin-top: 2rem;
 }
 
 .branding {
@@ -167,7 +215,35 @@ body {
     flex-direction: column;
     flex: 1;
     position: relative;
-    padding-bottom: 100px; /* Space for fixed chatbox */
+    padding-bottom: 120px; /* Increased space for fixed chatbox */
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-height: calc(100vh - 2rem); /* Ensure proper height constraint */
+}
+
+/* Hide scrollbar but keep functionality */
+.chat-area::-webkit-scrollbar {
+    width: 6px;
+}
+
+.chat-area::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.chat-area::-webkit-scrollbar-thumb {
+    background: #374151;
+    border-radius: 3px;
+    opacity: 0.5;
+}
+
+.chat-area::-webkit-scrollbar-thumb:hover {
+    background: #4B5563;
+}
+
+/* For Firefox */
+.chat-area {
+    scrollbar-width: thin;
+    scrollbar-color: #374151 transparent;
 }
 
 .chatbox {
@@ -186,10 +262,11 @@ body {
 
 .chatbox.bottom {
     position: fixed;
-    bottom: 1rem;
+    bottom: 15px; /* 15px from bottom instead of 1rem */
     left: 50%;
     transform: translateX(-50%);
     margin: 0 auto;
+    z-index: 1000;
 }
 
 .chat-message {
@@ -395,11 +472,17 @@ a {
     
     .main-content {
         padding: 1rem 0.5rem;
+        height: 100vh;
+    }
+    
+    .main-content.conversation-mode {
+        padding-top: 0.5rem;
     }
     
     .chat-area {
         max-width: 100%;
-        padding-bottom: 80px;
+        padding-bottom: 100px;
+        max-height: calc(100vh - 1rem);
     }
     
     .chatbox {
