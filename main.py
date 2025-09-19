@@ -362,9 +362,11 @@ def generate_chat_title(text):
     """Generate a natural chat title like other AI assistants."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
-        prompt = f"Create a natural 2-4 word title for this query: '{text}'. Examples: 'Headache relief', 'Fever treatment', 'Back pain help'. Don't use 'Issues with'."
+        prompt = f"Create a short 2-3 word title for this medical query: '{text}'. Examples: 'Fever treatment', 'Back pain', 'Headache help'. Return ONLY the title, nothing else."
         response = model.generate_content(prompt)
         title = response.text.strip().strip('"').strip("'")
+        # Take only first line if multiple suggestions
+        title = title.split('\n')[0].strip()
         logging.info(f"Generated chat title: {title}")
         return title
     except Exception as e:
@@ -376,24 +378,26 @@ def generate_chat_title(text):
         
         # Common medical terms and their natural titles
         medical_mappings = {
-            'headache': 'Headache relief',
+            'headache': 'Headache help',
             'fever': 'Fever treatment', 
             'cough': 'Cough remedy',
-            'pain': 'Pain management',
+            'pain': 'Pain relief',
             'nausea': 'Nausea help',
             'diarrhea': 'Stomach issues',
-            'fatigue': 'Fatigue concerns',
-            'dizzy': 'Dizziness help'
+            'fatigue': 'Fatigue help',
+            'dizzy': 'Dizziness help',
+            'antibiotic': 'Antibiotic question',
+            'medicine': 'Medicine advice'
         }
         
         for word in words:
             if word in medical_mappings:
                 return medical_mappings[word]
         
-        # Generic fallback - take first 3 meaningful words
-        meaningful_words = [w for w in words if len(w) > 2 and w not in ['the', 'and', 'but', 'for', 'are', 'with', 'can', 'you', 'have']]
-        title = ' '.join(meaningful_words[:3])
-        return title.capitalize() if title else "New Chat"
+        # Generic fallback - take first 2 meaningful words
+        meaningful_words = [w for w in words if len(w) > 2 and w not in ['the', 'and', 'but', 'for', 'are', 'with', 'can', 'you', 'have', 'say', 'true', 'false']]
+        title = ' '.join(meaningful_words[:2])
+        return title.capitalize() if title else "Medical question"
     """Generate a natural chat title like other AI assistants."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')

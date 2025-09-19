@@ -406,14 +406,12 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      console.log("Submitting query:", inputText || "Image");
-
       // Enter conversation mode if not already
       if (!isInConversation) {
         enterConversationMode();
       }
 
-      // Disable send button and hide chatbox during processing
+      // Disable send button
       sendBtn.disabled = true;
 
       // Store the input values before clearing
@@ -424,8 +422,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (chatInput) chatInput.value = "";
       if (fileUpload) fileUpload.value = "";
 
-      // Hide chatbox and show loading
-      if (chatbox) chatbox.style.display = "none";
+      // Hide chatbox completely and show loading
+      if (chatbox) {
+        chatbox.style.visibility = "hidden";
+        chatbox.style.opacity = "0";
+      }
       loadingSpinner.style.display = "block";
 
       const formData = new FormData();
@@ -638,6 +639,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // Show chatbox at bottom and reset UI
         sendBtn.disabled = false;
         if (chatbox) {
+          chatbox.style.visibility = "visible";
+          chatbox.style.opacity = "1";
           chatbox.style.display = "flex";
           if (isInConversation) {
             chatbox.classList.add("bottom");
@@ -645,12 +648,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         loadingSpinner.style.display = "none";
 
-        // Clear inputs
-        if (chatInput) {
-          chatInput.value = "";
-          chatInput.focus();
-        }
-        if (fileUpload) fileUpload.value = "";
+        // Focus input
+        if (chatInput) chatInput.focus();
       }
     });
   }

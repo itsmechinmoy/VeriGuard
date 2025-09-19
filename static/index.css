@@ -43,14 +43,14 @@ body {
     justify-content: flex-start;
 }
 
-/* Toggle button for sidebar */
+/* Toggle button for sidebar - positioned at bottom */
 .sidebar-toggle {
     background: none;
     border: none;
     color: #A3A3B8;
     cursor: pointer;
     position: absolute;
-    top: 1rem;
+    bottom: 1rem;
     right: 0.5rem;
     padding: 0.5rem;
     border-radius: 0.25rem;
@@ -66,6 +66,7 @@ body {
 .sidebar:not(.expanded) .sidebar-toggle {
     right: 50%;
     transform: translateX(50%);
+    bottom: 1rem;
 }
 
 /* Hide/show elements based on expansion */
