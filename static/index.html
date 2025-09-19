@@ -9,6 +9,75 @@
     <link rel="icon" href="icon-192.png" type="image/png">
     <title>VeriGuard - Medical Information Verification</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        // Keep-alive mechanism to prevent Render cold starts
+        class VeriGuardKeepAlive {
+          constructor() {
+            this.pingInterval = null;
+            this.backendUrl = 'https://veriguard.onrender.com';
+            this.init();
+          }
+
+          init() {
+            this.startKeepAlive();
+            
+            document.addEventListener('visibilitychange', () => {
+              if (document.hidden) {
+                this.stopKeepAlive();
+              } else {
+                this.startKeepAlive();
+              }
+            });
+            
+            window.addEventListener('beforeunload', () => {
+              this.stopKeepAlive();
+            });
+          }
+
+          async pingBackend() {
+            try {
+              const response = await fetch(`${this.backendUrl}/health`, {
+                method: 'GET',
+                cache: 'no-cache'
+              });
+              
+              if (response.ok) {
+                console.log('Keep-alive ping successful');
+              }
+            } catch (error) {
+              console.log('Keep-alive ping failed:', error.message);
+            }
+          }
+
+          startKeepAlive() {
+            if (this.pingInterval) return;
+            
+            this.pingInterval = setInterval(() => {
+              this.pingBackend();
+            }, 10 * 60 * 1000); // Every 10 minutes
+            
+            this.pingBackend(); // Initial ping
+            console.log('VeriGuard keep-alive started');
+          }
+
+          stopKeepAlive() {
+            if (this.pingInterval) {
+              clearInterval(this.pingInterval);
+              this.pingInterval = null;
+              console.log('VeriGuard keep-alive stopped');
+            }
+          }
+        }
+        
+        // Auto-initialize
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', () => {
+            new VeriGuardKeepAlive();
+          });
+        } else {
+          new VeriGuardKeepAlive();
+        }
+    </script>
 </head>
 <body>
     <div class="app-container">

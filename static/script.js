@@ -475,33 +475,145 @@ document.addEventListener("DOMContentLoaded", () => {
       // Scroll to bottom
       chatArea.scrollTop = chatArea.scrollHeight;
 
-      // Set up timeout
+      // Set up timeout with retry logic for cold starts
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        controller.abort();
-        console.error("Request timeout after 30 seconds");
-      }, 30000);
+      let timeoutId;
+
+      // First attempt: 60 seconds timeout for cold starts
+      const makeRequest = async (isRetry = false) => {
+        const timeout = isRetry ? 30000 : 60000; // 60s first try, 30s retry
+
+        timeoutId = setTimeout(() => {
+          controller.abort();
+          console.error(
+            `Request ${isRetry ? "retry" : "initial attempt"} timeout after ${
+              timeout / 1000
+            } seconds`
+          );
+        }, timeout);
+
+        try {
+          console.log(
+            `${isRetry ? "Retrying" : "Making initial"} request to backend...`
+          );
+          const response = await fetch(
+            "https://veriguard.onrender.com/process",
+            {
+              method: "POST",
+              body: formData,
+              signal: controller.signal,
+              headers: {
+                "Cache-Control": "no-cache",
+              },
+            }
+          );
+
+          clearTimeout(timeoutId);
+          console.log("Backend response status:", response.status);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+          }
+
+          return await response.json();
+        } catch (error) {
+          clearTimeout(timeoutId);
+
+          // If it's an abort error and this is the first attempt, try again
+          if (error.name === "AbortError" && !isRetry) {
+            console.log("Cold start detected, retrying request...");
+
+            // Show user-friendly message
+            const retryContainer = document.createElement("div");
+            retryContainer.style.marginBottom = "1rem";
+
+            const retryLabel = document.createElement("div");
+            retryLabel.textContent = "VeriGuard:";
+            retryLabel.style.fontWeight = "bold";
+            retryLabel.style.color = "#E5E7EB";
+            retryLabel.style.marginBottom = "0.25rem";
+            retryLabel.style.fontSize = "0.9rem";
+
+            const retryMessage = document.createElement("div");
+            retryMessage.textContent =
+              "Server is starting up, please wait a moment...";
+            retryMessage.className = "chat-message reply";
+            retryMessage.style.backgroundColor = "#1F2937";
+            retryMessage.style.color = "#93C5FD";
+
+            retryContainer.appendChild(retryLabel);
+            retryContainer.appendChild(retryMessage);
+            chatArea.appendChild(retryContainer);
+            chatArea.scrollTop = chatArea.scrollHeight;
+
+            // Wait a bit then retry with new controller
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+
+            // Create new controller for retry
+            const retryController = new AbortController();
+            const retryFormData = new FormData();
+
+            // Rebuild form data for retry
+            if (currentChatId) {
+              retryFormData.append("chat_id", currentChatId);
+              retryFormData.append("conversation_context", "true");
+            }
+
+            if (fileValue) {
+              retryFormData.append("file", fileValue);
+            } else if (
+              inputValue &&
+              (inputValue.startsWith("http://") ||
+                inputValue.startsWith("https://"))
+            ) {
+              retryFormData.append("image_url", inputValue);
+            } else if (inputValue) {
+              retryFormData.append("text", inputValue);
+            }
+
+            const retryTimeout = setTimeout(() => {
+              retryController.abort();
+            }, 30000);
+
+            try {
+              const retryResponse = await fetch(
+                "https://veriguard.onrender.com/process",
+                {
+                  method: "POST",
+                  body: retryFormData,
+                  signal: retryController.signal,
+                  headers: {
+                    "Cache-Control": "no-cache",
+                  },
+                }
+              );
+
+              clearTimeout(retryTimeout);
+
+              if (!retryResponse.ok) {
+                const errorText = await retryResponse.text();
+                throw new Error(`HTTP ${retryResponse.status}: ${errorText}`);
+              }
+
+              // Remove retry message
+              retryContainer.remove();
+
+              return await retryResponse.json();
+            } catch (retryError) {
+              clearTimeout(retryTimeout);
+              // Remove retry message
+              retryContainer.remove();
+              throw retryError;
+            }
+          }
+
+          throw error;
+        }
+      };
 
       try {
-        console.log("Fetching from backend...");
-        const response = await fetch("https://veriguard.onrender.com/process", {
-          method: "POST",
-          body: formData,
-          signal: controller.signal,
-          headers: {
-            "Cache-Control": "no-cache",
-          },
-        });
-
-        clearTimeout(timeoutId);
-        console.log("Backend response status:", response.status);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
-
-        const data = await response.json();
+        const data = await makeRequest();
         console.log("Backend response data:", data);
 
         // Create reply message with label
