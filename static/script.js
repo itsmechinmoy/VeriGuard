@@ -412,12 +412,28 @@ document.addEventListener("DOMContentLoaded", () => {
         enterConversationMode();
       }
 
-      // Disable send button and hide chatbox
+      // Disable send button and hide chatbox during processing
       sendBtn.disabled = true;
+
+      // Store the input values before clearing
+      const inputValue = inputText;
+      const fileValue = file;
+
+      // Clear inputs immediately to prevent resubmission
+      if (chatInput) chatInput.value = "";
+      if (fileUpload) fileUpload.value = "";
+
+      // Hide chatbox and show loading
       if (chatbox) chatbox.style.display = "none";
       loadingSpinner.style.display = "block";
 
       const formData = new FormData();
+
+      // Include current chat ID if we're in an existing conversation
+      if (currentChatId) {
+        formData.append("chat_id", currentChatId);
+        formData.append("conversation_context", "true");
+      }
 
       if (file) {
         formData.append("file", file);
@@ -522,6 +538,14 @@ document.addEventListener("DOMContentLoaded", () => {
           );
         }
 
+        // Only update chat title for the very first message in a new chat
+        const shouldUpdateTitle = !currentChatId && existingChatIndex === -1;
+        const chatTitle = shouldUpdateTitle
+          ? data.chat_title || generateChatTitle(inputValue)
+          : existingChatIndex >= 0
+          ? chatHistory[existingChatIndex].title
+          : generateChatTitle(inputValue);
+
         const chatData = {
           chat_id:
             currentChatId ||
@@ -532,18 +556,14 @@ document.addEventListener("DOMContentLoaded", () => {
               ? chatHistory[existingChatIndex].created_at
               : Date.now(),
           updated_at: Date.now(),
-          title:
-            data.chat_title ||
-            (existingChatIndex >= 0
-              ? chatHistory[existingChatIndex].title
-              : generateChatTitle(inputText)),
+          title: chatTitle, // Keep original title, don't update it
           messages:
             existingChatIndex >= 0
               ? [
                   ...chatHistory[existingChatIndex].messages,
                   {
                     type: "user",
-                    content: inputText || "Image input",
+                    content: inputValue || "Image input",
                     timestamp: Date.now(),
                   },
                   {
@@ -555,7 +575,7 @@ document.addEventListener("DOMContentLoaded", () => {
               : [
                   {
                     type: "user",
-                    content: inputText || "Image input",
+                    content: inputValue || "Image input",
                     timestamp: Date.now(),
                   },
                   {
@@ -565,16 +585,15 @@ document.addEventListener("DOMContentLoaded", () => {
                   },
                 ],
           // Legacy fields for compatibility
-          extracted_text: inputText || "Image input",
+          extracted_text: inputValue || "Image input",
           summary: data.summary,
           pubmed_results: data.sources?.pubmed || [],
           fact_checks: data.sources?.fact_checks || [],
         };
 
         if (existingChatIndex >= 0) {
-          // Update existing chat
+          // Update existing chat and move to front
           chatHistory[existingChatIndex] = chatData;
-          // Move to front
           chatHistory.unshift(chatHistory.splice(existingChatIndex, 1)[0]);
         } else {
           // Add new chat to front

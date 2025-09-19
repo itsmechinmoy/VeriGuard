@@ -296,7 +296,67 @@ async def summarize_with_deepseek(text, pubmed, fact_checks, gemini_analysis):
             return "I'm VeriGuard, a MediFact Checker - An AI tool for verifying health misinformation and helping with health queries. Ask me about any health concern!"
         return f"Summary unavailable: {str(e)}"
 
-def generate_chat_title(text):
+def analyze_with_gemini_context(text):
+    """Gemini for medical analysis - context-aware for continuing conversations."""
+    if not GEMINI_API_KEY:
+        logging.error("Gemini API key not set")
+        return "Analysis unavailable"
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        prompt = f"Continue the medical conversation. User asks: {text}. Provide specific medical advice, acknowledging this is a follow-up question. Keep under 100 words."
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        logging.error(f"Gemini context analysis error: {str(e)}")
+        return "Context analysis unavailable"
+
+async def summarize_with_context(text, pubmed, fact_checks, gemini_analysis):
+    """DeepSeek for context-aware responses in continuing conversations."""
+    if not DEEPSEEK_API_KEY:
+        logging.error("DeepSeek API key not set")
+        return "Context response unavailable"
+    
+    try:
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://veriguard.onrender.com",
+            "X-Title": "VeriGuard"
+        }
+        
+        prompt = f"""
+        This is a follow-up question in an ongoing medical conversation: {text}
+        
+        Provide a specific, direct answer that acknowledges this is continuing the previous discussion.
+        Focus on:
+        - Direct answer to their follow-up question
+        - Specific medical information requested
+        - Keep it concise (under 80 words)
+        
+        Do NOT introduce yourself again or explain what VeriGuard is.
+        """
+        
+        payload = {
+            "model": "deepseek/deepseek-chat",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 120,
+            "temperature": 0.1
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=15
+            ) as response:
+                logging.info(f"DeepSeek context status: {response.status}")
+                response.raise_for_status()
+                data = await response.json()
+                return data["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        logging.error(f"DeepSeek context error: {str(e)}")
+        return f"Follow-up response unavailable: {str(e)}"
     """Generate a natural chat title like other AI assistants."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
@@ -342,10 +402,18 @@ async def head_root():
     return {"message": "VeriGuard Backend is running."}
 
 @app.post("/process")
-async def process_input(file: UploadFile = None, image_url: str = Form(None), text: str = Form(None)):
+async def process_input(
+    file: UploadFile = None, 
+    image_url: str = Form(None), 
+    text: str = Form(None),
+    chat_id: str = Form(None),
+    conversation_context: str = Form(None)
+):
     start_time = time.time()
-    chat_id = str(uuid.uuid4())
-    logging.info(f"Starting /process request with chat_id: {chat_id}, text: {text}")
+    request_chat_id = chat_id or str(uuid.uuid4())
+    is_continuing_conversation = conversation_context == "true" and chat_id is not None
+    
+    logging.info(f"Starting /process request with chat_id: {request_chat_id}, text: {text}, continuing_conversation: {is_continuing_conversation}")
     
     try:
         cache_key = None
@@ -360,56 +428,83 @@ async def process_input(file: UploadFile = None, image_url: str = Form(None), te
                     extracted_text = perform_ai_ocr(image)
         else:
             extracted_text = text.strip() if text else ""
-            cache_key = get_cache_key(extracted_text)
-            if cache_key in response_cache:
-                logging.info(f"Cache hit for key: {cache_key}")
-                cached = response_cache[cache_key]
-                cached["chat_id"] = chat_id
-                logging.info(f"Total request time: {time.time() - start_time:.2f} seconds")
-                return cached
+            # Only use cache for new conversations, not continuing ones
+            if not is_continuing_conversation:
+                cache_key = get_cache_key(extracted_text)
+                if cache_key in response_cache:
+                    logging.info(f"Cache hit for key: {cache_key}")
+                    cached = response_cache[cache_key]
+                    cached["chat_id"] = request_chat_id
+                    logging.info(f"Total request time: {time.time() - start_time:.2f} seconds")
+                    return cached
 
         logging.info(f"Text extraction took {time.time() - start_time:.2f} seconds")
         if not extracted_text:
             raise HTTPException(400, detail="No text extracted or provided")
 
-        # Run async tasks concurrently
-        pubmed_task = search_pubmed(extracted_text)
-        fact_check_task = search_fact_check(extracted_text)
+        # For continuing conversations, provide context-aware responses
+        if is_continuing_conversation:
+            # Run tasks with conversation context
+            pubmed_task = search_pubmed(extracted_text)
+            fact_check_task = search_fact_check(extracted_text)
+            
+            # Use conversation-aware prompts
+            loop = asyncio.get_running_loop()
+            gemini_task = loop.run_in_executor(None, analyze_with_gemini_context, extracted_text)
+            title_task = loop.run_in_executor(None, lambda: None)  # Don't generate new title
+            
+            # Generate context-aware summary
+            summary_task = summarize_with_context(extracted_text, [], [], "Context-aware response")
+        else:
+            # Regular new conversation flow
+            pubmed_task = search_pubmed(extracted_text)
+            fact_check_task = search_fact_check(extracted_text)
+            
+            loop = asyncio.get_running_loop()
+            gemini_task = loop.run_in_executor(None, analyze_with_gemini, extracted_text)
+            title_task = loop.run_in_executor(None, generate_chat_title, extracted_text)
         
-        # Run sync tasks in threadpool
-        loop = asyncio.get_running_loop()
-        gemini_task = loop.run_in_executor(None, analyze_with_gemini, extracted_text)
-        title_task = loop.run_in_executor(None, generate_chat_title, extracted_text)
+        # Wait for results
+        if is_continuing_conversation:
+            results = await asyncio.gather(
+                pubmed_task, fact_check_task, gemini_task, title_task, summary_task,
+                return_exceptions=True
+            )
+            summary = results[4] if not isinstance(results[4], Exception) else "Context-aware response unavailable"
+        else:
+            results = await asyncio.gather(
+                pubmed_task, fact_check_task, gemini_task, title_task,
+                return_exceptions=True
+            )
+            
+            pubmed_results = results[0] if not isinstance(results[0], Exception) else []
+            fact_checks = results[1] if not isinstance(results[1], Exception) else []
+            gemini_analysis = results[2] if not isinstance(results[2], Exception) else "Analysis unavailable"
+            chat_title = results[3] if not isinstance(results[3], Exception) else generateChatTitle(extracted_text)
+            
+            # Generate final summary
+            summary = await summarize_with_deepseek(extracted_text, pubmed_results, fact_checks, gemini_analysis)
         
-        # Wait for initial results
-        results = await asyncio.gather(
-            pubmed_task, fact_check_task, gemini_task, title_task,
-            return_exceptions=True
-        )
-        
-        pubmed_results = results[0] if not isinstance(results[0], Exception) else []
-        fact_checks = results[1] if not isinstance(results[1], Exception) else []
-        gemini_analysis = results[2] if not isinstance(results[2], Exception) else "Analysis unavailable"
-        chat_title = results[3] if not isinstance(results[3], Exception) else f"Issues with {extract_query(extracted_text)}"
-        
-        # Generate final summary with all available data
-        summary = await summarize_with_deepseek(extracted_text, pubmed_results, fact_checks, gemini_analysis)
+        # Handle results for continuing conversation
+        if is_continuing_conversation:
+            pubmed_results = results[0] if not isinstance(results[0], Exception) else []
+            fact_checks = results[1] if not isinstance(results[1], Exception) else []
+            chat_title = None  # Don't return new title for continuing conversations
         
         if not summary or summary == "Summary unavailable":
-            # Fallback to basic Gemini response if DeepSeek fails
-            summary = gemini_analysis or "Unable to provide medical guidance at this time."
+            summary = gemini_analysis if not is_continuing_conversation else "Unable to provide context-aware response."
 
         response = {
-            "chat_id": chat_id,
+            "chat_id": request_chat_id,
             "summary": summary,
             "sources": {
                 "pubmed": pubmed_results,
                 "fact_checks": fact_checks
             },
-            "chat_title": chat_title
+            "chat_title": chat_title  # Will be None for continuing conversations
         }
 
-        if cache_key:
+        if cache_key and not is_continuing_conversation:
             response_cache[cache_key] = response.copy()
             logging.info(f"Cached response for key: {cache_key}")
 
@@ -422,11 +517,11 @@ async def process_input(file: UploadFile = None, image_url: str = Form(None), te
     except Exception as e:
         logging.error(f"Error in /process: {str(e)}")
         return {
-            "chat_id": chat_id,
+            "chat_id": request_chat_id,
             "summary": f"Sorry, I'm unable to process your request right now. Please try again later.",
             "sources": {
                 "pubmed": [],
                 "fact_checks": []
             },
-            "chat_title": "Error Processing Request"
+            "chat_title": "Error Processing Request" if not is_continuing_conversation else None
         }
