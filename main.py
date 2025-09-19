@@ -357,6 +357,43 @@ async def summarize_with_context(text, pubmed, fact_checks, gemini_analysis):
     except Exception as e:
         logging.error(f"DeepSeek context error: {str(e)}")
         return f"Follow-up response unavailable: {str(e)}"
+
+def generate_chat_title(text):
+    """Generate a natural chat title like other AI assistants."""
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        prompt = f"Create a natural 2-4 word title for this query: '{text}'. Examples: 'Headache relief', 'Fever treatment', 'Back pain help'. Don't use 'Issues with'."
+        response = model.generate_content(prompt)
+        title = response.text.strip().strip('"').strip("'")
+        logging.info(f"Generated chat title: {title}")
+        return title
+    except Exception as e:
+        logging.error(f"Gemini title generation error: {str(e)}")
+        # Fallback to natural title generation
+        words = text.lower().strip().split()
+        if not words:
+            return "New Chat"
+        
+        # Common medical terms and their natural titles
+        medical_mappings = {
+            'headache': 'Headache relief',
+            'fever': 'Fever treatment', 
+            'cough': 'Cough remedy',
+            'pain': 'Pain management',
+            'nausea': 'Nausea help',
+            'diarrhea': 'Stomach issues',
+            'fatigue': 'Fatigue concerns',
+            'dizzy': 'Dizziness help'
+        }
+        
+        for word in words:
+            if word in medical_mappings:
+                return medical_mappings[word]
+        
+        # Generic fallback - take first 3 meaningful words
+        meaningful_words = [w for w in words if len(w) > 2 and w not in ['the', 'and', 'but', 'for', 'are', 'with', 'can', 'you', 'have']]
+        title = ' '.join(meaningful_words[:3])
+        return title.capitalize() if title else "New Chat"
     """Generate a natural chat title like other AI assistants."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
