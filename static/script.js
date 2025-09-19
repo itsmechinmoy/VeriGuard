@@ -5,7 +5,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const chatList = document.getElementById("chat-list");
   const sidebar = document.querySelector(".sidebar");
   const askButton = document.querySelector(".ask-button");
-  const toggleHistoryBtn = document.querySelector(".toggle-history");
+  const historyButton = document.querySelector(".history-button");
+  const sidebarToggle = document.querySelector(".sidebar-toggle");
   const chatArea = document.getElementById("chat-area");
   const branding = document.querySelector(".branding");
   const chatbox = document.querySelector(".chatbox");
@@ -664,19 +665,40 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Sidebar toggle functionality
+  if (sidebarToggle) {
+    sidebarToggle.addEventListener("click", () => {
+      sidebar.classList.toggle("expanded");
+
+      // Update toggle button icon
+      const icon = sidebarToggle.querySelector("svg path");
+      if (sidebar.classList.contains("expanded")) {
+        // Show collapse icon (<<)
+        icon.setAttribute("d", "M11 19l-7-7 7-7M19 19l-7-7 7-7");
+      } else {
+        // Show expand icon (>>)
+        icon.setAttribute("d", "M13 5l7 7-7 7M5 5l7 7-7 7");
+      }
+    });
+  }
+
   // Ask button handler
   if (askButton) {
     askButton.addEventListener("click", startNewChat);
   }
 
-  // Toggle history visibility
-  if (toggleHistoryBtn) {
-    toggleHistoryBtn.addEventListener("click", () => {
-      if (sidebar) {
-        sidebar.classList.toggle("expanded");
+  // History button handler (replaces toggle functionality)
+  if (historyButton) {
+    historyButton.addEventListener("click", () => {
+      // If sidebar is collapsed, expand it to show history
+      if (!sidebar.classList.contains("expanded")) {
+        sidebar.classList.add("expanded");
+        const icon = sidebarToggle.querySelector("svg path");
+        icon.setAttribute("d", "M11 19l-7-7 7-7M19 19l-7-7 7-7");
       }
+      // Focus could scroll to history area if needed
       if (chatList) {
-        chatList.classList.toggle("hidden");
+        chatList.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
     });
   }

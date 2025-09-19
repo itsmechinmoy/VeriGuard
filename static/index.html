@@ -13,13 +13,24 @@
 <body>
     <div class="app-container">
         <div class="sidebar expanded">
+            <button class="sidebar-toggle">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>
+                </svg>
+            </button>
             <div class="sidebar-header">
                 <a href="https://veriguard-hackathon.netlify.app" class="logo">
                     <img src="https://files.catbox.moe/jnkkys.png" alt="VeriGuard Logo" style="border-radius: 50%;">
                 </a>
             </div>
-            <button class="ask-button">Ask</button>
-            <button class="toggle-history">History</button>
+            <div class="sidebar-controls">
+                <button class="ask-button">
+                    <span class="button-text">Ask</span>
+                </button>
+                <button class="history-button">
+                    <span class="button-text">History</span>
+                </button>
+            </div>
             <div id="chat-list" class="chat-list"></div>
         </div>
         <div class="main-content">

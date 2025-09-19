@@ -480,7 +480,7 @@ async def process_input(
             pubmed_results = results[0] if not isinstance(results[0], Exception) else []
             fact_checks = results[1] if not isinstance(results[1], Exception) else []
             gemini_analysis = results[2] if not isinstance(results[2], Exception) else "Analysis unavailable"
-            chat_title = results[3] if not isinstance(results[3], Exception) else generateChatTitle(extracted_text)
+            chat_title = results[3] if not isinstance(results[3], Exception) else generate_chat_title(extracted_text)
             
             # Generate final summary
             summary = await summarize_with_deepseek(extracted_text, pubmed_results, fact_checks, gemini_analysis)
